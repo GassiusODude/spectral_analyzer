@@ -3,13 +3,17 @@
 <?import javafx.scene.layout.StackPane?>
 <?import javafx.scene.layout.Pane?>
 <?import javafx.scene.layout.VBox?>
+<?import javafx.scene.layout.HBox?>
+<?import javafx.scene.layout.BorderPane?>
+<?import javafx.scene.layout.Region?>
 <?import javafx.scene.control.*?>
-<VBox prefHeight="600.0" prefWidth="800.0"
+<VBox prefHeight="400" prefWidth="600"
+      minHeight="400" minWidth="600"
       xmlns="http://javafx.com"
       xmlns:fx="http://javafx.com"
       fx:controller="net.kcundercover.spectral_analyzer.MainController">
    <children>
-      <MenuBar VBox.vgrow="NEVER">
+      <MenuBar VBox.vgrow="NEVER" style="-fx-background-color: #f4f4f4; -fx-base: #f4f4f4;">
         <menus>
           <Menu text="File">
             <items>
@@ -25,14 +29,33 @@
           </Menu>
         </menus>
       </MenuBar>
+      <BorderPane VBox.vgrow="ALWAYS" minHeight="0" minWidth="0">
+          <!-- Frequency Axis -->
+          <left>
+              <Pane fx:id="frequencyRuler" prefWidth="80" style="-fx-background-color: #1a1a1a;" />
+          </left>
 
-      <StackPane fx:id="plotContainer" VBox.vgrow="ALWAYS" style="-fx-background-color: black;">
-        <children>
-            <Canvas fx:id="spectrogramCanvas" width="800" height="400" StackPane.alignment="TOP_LEFT" />
-            <Pane fx:id="annotationOverlay" pickOnBounds="false" />
-        </children>
-      </StackPane>
+          <!-- Spectrogam and Overlay-->
+          <center>
+            <StackPane fx:id="plotContainer" minWidth="0" minHeight="0" style="-fx-background-color: lightgray;">
+              <children>
+                  <Canvas fx:id="spectrogramCanvas" managed="true" StackPane.alignment="TOP_LEFT" />
+                  <Pane fx:id="annotationOverlay" pickOnBounds="false" />
+              </children>
+            </StackPane>
+          </center>
+          <!-- Time Labels -->
+          <bottom>
+            <VBox prefHeight="50.0" alignment="CENTER_LEFT" style="-fx-background-color: #1a1a1a;">
+              <HBox fx:id="timeAxis" prefHeight="25" alignment="CENTER_LEFT" style="-fx-background-color: #1a1a1a;">
+                <!-- Start time axis where canvas starts (offset from frequency axis)-->
+                <Region fx:id="axisSpacer" prefWidth="80" />
+              </HBox>
+              <ScrollBar fx:id="fileScrollBar" min="0" max="100" orientation="HORIZONTAL" />
+            </VBox>
+          </bottom>
+      </BorderPane>
 
-      <ScrollBar fx:id="fileScrollBar" min="0" max="100" orientation="HORIZONTAL" />
+
    </children>
 </VBox>

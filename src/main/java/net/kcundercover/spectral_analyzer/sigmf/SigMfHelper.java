@@ -2,13 +2,16 @@ package net.kcundercover.spectral_analyzer.sigmf;
 
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.core.type.TypeReference;
+
 import java.io.File;
 import java.io.RandomAccessFile;
 import java.nio.ByteOrder;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.file.Path;
-
+import java.util.List;
+import net.kcundercover.spectral_analyzer.sigmf.SigMfAnnotation;
 public class SigMfHelper {
     private final ObjectMapper mapper = new ObjectMapper()
         // This prevents the UnrecognizedPropertyException
@@ -41,4 +44,12 @@ public class SigMfHelper {
 
     public SigMfMetadata getMetadata() { return metadata; }
     public MappedByteBuffer getDataBuffer() { return dataBuffer; }
+
+    public List<SigMfAnnotation> getParsedAnnotations() {
+        ObjectMapper mapper = new ObjectMapper();
+        // This converts the raw Map from Jackson into your specific SigMfAnnotation records
+        return mapper.convertValue(metadata.annotations(),
+            new TypeReference<List<SigMfAnnotation>>() {});
+    }
+
 }
