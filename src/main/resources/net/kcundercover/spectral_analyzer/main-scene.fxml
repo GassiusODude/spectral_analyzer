@@ -1,8 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<?import javafx.scene.canvas.Canvas?>
+<?import javafx.scene.layout.StackPane?>
+<?import javafx.scene.layout.Pane?>
+<?import javafx.scene.layout.VBox?>
 <?import javafx.scene.control.*?>
-<?import javafx.scene.layout.*?>
-
-<VBox prefHeight="600.0" prefWidth="800.0" xmlns="http://javafx.com"
+<VBox prefHeight="600.0" prefWidth="800.0"
+      xmlns="http://javafx.com"
       xmlns:fx="http://javafx.com"
       fx:controller="net.kcundercover.spectral_analyzer.MainController">
    <children>
@@ -15,22 +18,21 @@
               <MenuItem text="Exit" onAction="#handleExit" />
             </items>
           </Menu>
-          <Menu text="Analysis">
-            <items>
-              <MenuItem text="Detect Beat (ODF)" onAction="#handleBeatDetection" />
-            </items>
-          </Menu>
           <Menu text="Help">
             <items>
-              <MenuItem text="About" />
+              <MenuItem text="About" onAction="#handleAbout" />
             </items>
           </Menu>
         </menus>
       </MenuBar>
-      <AnchorPane VBox.vgrow="ALWAYS">
-         <children>
-            <Label text="Signal Display Area" layoutX="350.0" layoutY="250.0" />
-         </children>
-      </AnchorPane>
+
+      <StackPane fx:id="plotContainer" VBox.vgrow="ALWAYS" style="-fx-background-color: black;">
+        <children>
+            <Canvas fx:id="spectrogramCanvas" width="800" height="400" StackPane.alignment="TOP_LEFT" />
+            <Pane fx:id="annotationOverlay" pickOnBounds="false" />
+        </children>
+      </StackPane>
+
+      <ScrollBar fx:id="fileScrollBar" min="0" max="100" orientation="HORIZONTAL" />
    </children>
 </VBox>
