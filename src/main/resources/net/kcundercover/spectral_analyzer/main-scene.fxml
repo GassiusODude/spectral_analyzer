@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+
+<VBox prefHeight="600.0" prefWidth="800.0" xmlns="http://javafx.com"
+      xmlns:fx="http://javafx.com"
+      fx:controller="net.kcundercover.spectral_analyzer.MainController">
+   <children>
+      <MenuBar VBox.vgrow="NEVER">
+        <menus>
+          <Menu text="File">
+            <items>
+              <MenuItem text="Open Signal..." onAction="#handleOpen" />
+              <SeparatorMenuItem />
+              <MenuItem text="Exit" onAction="#handleExit" />
+            </items>
+          </Menu>
+          <Menu text="Analysis">
+            <items>
+              <MenuItem text="Detect Beat (ODF)" onAction="#handleBeatDetection" />
+            </items>
+          </Menu>
+          <Menu text="Help">
+            <items>
+              <MenuItem text="About" />
+            </items>
+          </Menu>
+        </menus>
+      </MenuBar>
+      <AnchorPane VBox.vgrow="ALWAYS">
+         <children>
+            <Label text="Signal Display Area" layoutX="350.0" layoutY="250.0" />
+         </children>
+      </AnchorPane>
+   </children>
+</VBox>
