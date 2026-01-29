@@ -7,6 +7,11 @@ import org.apache.commons.math3.transform.TransformType;
 import org.springframework.stereotype.Service;
 import java.nio.MappedByteBuffer;
 
+/**
+ * Service to perform FFT
+ *
+ * This service processes the FFT on an input buffer.
+ */
 @Service
 public class SpectralService {
 
