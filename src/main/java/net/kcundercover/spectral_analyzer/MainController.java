@@ -2,11 +2,19 @@ package net.kcundercover.spectral_analyzer;
 
 import javafx.event.ActionEvent;
 import javafx.fxml.FXML;
+import javafx.fxml.FXMLLoader;
 import javafx.geometry.Insets;
 import javafx.application.Platform;
 import javafx.beans.value.ChangeListener;
 import javafx.scene.control.Alert;
 import javafx.scene.control.Alert.AlertType;
+import javafx.scene.control.ButtonType;
+import javafx.scene.control.CheckBox;
+import javafx.scene.control.ColorPicker;
+import javafx.scene.control.Dialog;
+import javafx.scene.control.Slider;
+import javafx.scene.control.TextArea;
+import javafx.scene.control.TextField;
 import javafx.scene.control.Tooltip;
 import javafx.scene.canvas.Canvas;
 import javafx.scene.canvas.GraphicsContext;
@@ -20,60 +28,156 @@ import javafx.scene.layout.Pane;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.HBox;    // For the timeAxis container
 import javafx.scene.layout.Region;
+import javafx.scene.layout.VBox;
 import javafx.scene.shape.Rectangle;
 import javafx.scene.paint.Color;
+import javafx.scene.Parent;
 import javafx.stage.FileChooser;
 import javafx.stage.Window;
 import javafx.util.Duration;
+
 import java.io.File;
+import java.io.IOException;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+
 import net.rgielen.fxweaver.core.FxmlView;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
-//import org.w3c.dom.css.Rect;
-
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import java.nio.file.Path;
 import net.kcundercover.spectral_analyzer.sigmf.SigMfHelper;
 import net.kcundercover.spectral_analyzer.sigmf.SigMfMetadata;
 import net.kcundercover.spectral_analyzer.sigmf.SigMfAnnotation;
 @Component
 @FxmlView("main-scene.fxml") // Links to the XML file above
 public class MainController {
+    private static final Logger logger = LoggerFactory.getLogger(MainController.class);
+
     private final AtomicBoolean redrawPending = new AtomicBoolean(false);
     private SigMfHelper sigMfHelper = new SigMfHelper();
     private long currentSampleOffset = 0; // Where we are in the file
-    private int FFT_SIZE = 1024;
-    private int visibleRows = 500;
+    private int fft_size = 1024;
+    private Path input_file;
+    // Simple helper class for coordinate tracking
+    private static class Delta { double x, y; }
+    private final Map<String, Color> annotationStyles = new HashMap<>();
 
-    @Autowired
-    private SpectralService spectralService;
+    @Autowired private SpectralService spectralService;
 
-    @FXML
-    private ScrollBar fileScrollBar;
+    // ------------------------- majority of GUI  -----------------------------
+    // main plot of spectrogram, overlays
+    @FXML private StackPane plotContainer;
+    @FXML private Canvas spectrogramCanvas;
+    @FXML private Pane annotationOverlay;
 
-    // Inside MainController.java
+    // the horizontal and vertical axes
+    @FXML private Pane frequencyRuler;
+    @FXML private HBox timeAxis;
+    @FXML private Region axisSpacer;
+    @FXML private Region rightAxisSpacer;
+    @FXML private ScrollBar fileScrollBar;
+
+    // -----------------------------  controls  -------------------------------
+
+    // FFT control and display
+    @FXML private Slider nfftSlider;
+    @FXML private Label lblNfftValue;
+
+    // selection
+    @FXML private Label lblSelectionStart;
+    @FXML private Label lblSelectionDur;
+    @FXML private Label lblFreqLow;
+    @FXML private Label lblFreqHigh;
+    @FXML private TextField selectionNameField;
+    @FXML private TextArea selectionDescField;
+    @FXML private CheckBox showAnnotationsCheckbox;
+    @FXML private ColorPicker annotationColorPicker;
+
+
+
+    /**
+     * AnnotationGroup is used to track the UI {@code label} and {@code rect})
+     * and the SigMFAnnotation {@code data}.
+     *
+     * {@code label} is used to show the type of annotation
+     * {@code rect} is a overlaying Rectangle to show the time/frequency position
+     * {@code data} is the Annotation information.
+     */
     private static class AnnotationGroup {
         Rectangle rect;
         Label label;
         SigMfAnnotation data;
     }
 
+    /** This mapping tracks the AnnotationGroup by the rectangle overlay */
     private final Map<Rectangle, AnnotationGroup> annotationMap = new HashMap<>();
+
+
+    /**
+     * Remove the {@code rect} and the associated label from
+     * @param rect
+     */
+    public void removeAnnotation(Rectangle rect) {
+        AnnotationGroup group = annotationMap.remove(rect);
+        if (group != null) {
+            annotationOverlay.getChildren().removeAll(
+                group.rect,
+                group.label
+            );
+        }
+    }
 
     private Color defaultAnnotColor = Color.rgb(46, 204, 113, 1.0);
 
-    // -----------------  selection rectange  -------------------------
+    // ============================================================================================
+    //                                  Active Selection
+    // ============================================================================================
     private double selectionX, selectionY;
     private Rectangle selectionRect = new Rectangle(0, 0, 0, 0);
-    private Rectangle activeSelection;
     private long selectionStartSample = 0; // The file-based anchor
     private double selectionStartWidthSamples = 0; // How many samples wide it is
+    private double selectionFreqLow = 0;
+    private double selectionFreqHigh = 0;
 
+
+    /**
+     * Resets the variables regarding the user selection and
+     * the UI components displaying that information
+     */
+    private void resetSelection() {
+        // reset tracked values and UI display
+        selectionStartSample = 0; // The file-based anchor
+        selectionStartWidthSamples = 0; // How many samples wide it is
+        selectionFreqLow = 0;
+        selectionFreqHigh = 0;
+
+        // NOTE: reset the UI display
+        lblSelectionStart.setText("0 seconds");
+        lblSelectionDur.setText("0 seconds");
+        lblFreqLow.setText("No selection");
+        lblFreqHigh.setText("No selection");
+
+        selectionRect.setHeight(0);
+        selectionRect.setWidth(0);
+        selectionRect.setStroke(Color.rgb(255, 255, 255, 1.0));
+        selectionRect.setStrokeWidth(2);
+        selectionRect.setFill(Color.rgb(255, 255, 255, 0.3));
+        selectionRect.setVisible(false);
+    }
+
+    // ============================================================================================
+    //                                  Initialize
+    // ============================================================================================
 
     @FXML
     public void initialize() {
+        annotationColorPicker.setValue(Color.MAGENTA);
         // initialize selection rectangle to be hidden
         annotationOverlay.getChildren().add(selectionRect);
         selectionRect.setVisible(false);
@@ -93,6 +197,18 @@ public class MainController {
         plotContainer.widthProperty().addListener(resizeListener);
         plotContainer.heightProperty().addListener(resizeListener);
 
+        nfftSlider.valueProperty().addListener((obs, oldVal, newVal) -> {
+            // Enforce integer steps and calculate power of 2
+            int exponent = newVal.intValue();
+            fft_size = (int) Math.pow(2, exponent);
+
+            // Update UI
+            lblNfftValue.setText(String.valueOf(fft_size));
+
+            // Trigger re-processing
+            updateDisplay();
+        });
+
         // // debug
         // plotContainer.layoutBoundsProperty().addListener((obs, oldVal, newVal) -> {
         //     System.out.println("Plot bounds: " + newVal);
@@ -111,39 +227,42 @@ public class MainController {
             updateDisplay(); // Redraw the canvas at the new offset
         });
 
-        // ========================================================================================
+        // ======================================
         //  Selection helper to test annotations
-        // ========================================================================================
+        // ======================================
         // Give the pane a "ghost" background so it's clickable
         annotationOverlay.setStyle("-fx-background-color: rgba(0,0,0,0);");
+
         // Ensure it fills the space but lets you click the canvas IF NO BOX IS THERE
         annotationOverlay.setPickOnBounds(false);
         annotationOverlay.prefWidthProperty().bind(spectrogramCanvas.widthProperty());
         annotationOverlay.prefHeightProperty().bind(spectrogramCanvas.heightProperty());
 
+        // ======================================
+        // Annotations Overlay Mouse handlers
+        // ======================================
         annotationOverlay.setOnMousePressed(e -> {
+            if (e.getButton() == MouseButton.SECONDARY) {
+                // NOTE: Use right click to say delete this current selection
+                resetSelection();
 
-            selectionX = e.getX();
-            selectionY = e.getY();
+            } else {
+                // new selection starting...track X, Y position
+                resetSelection();
+                selectionX = e.getX();
+                selectionY = e.getY();
 
-            selectionRect.setX(selectionX);
-            selectionRect.setY(selectionY);
+                selectionRect.setX(selectionX);
+                selectionRect.setY(selectionY);
 
-            // reset settings
-            selectionRect.setHeight(0);
-            selectionRect.setWidth(0);
-            selectionRect.setStroke(Color.rgb(255, 255, 255, 1.0));
-            selectionRect.setStrokeWidth(2);
-            selectionRect.setFill(Color.rgb(255, 255, 255, 0.2));
-
-            int canvasW = (int) spectrogramCanvas.getWidth();
-            this.selectionStartSample = currentSampleOffset + (long)((selectionX / canvasW) * (canvasW * FFT_SIZE));
-
-            selectionRect.setVisible(true);
+                selectionRect.setVisible(true);
+            }
         });
 
         annotationOverlay.setOnMouseDragged(e -> {
-            if (selectionRect != null) {
+            if (e.getButton() == MouseButton.SECONDARY) {
+                // secondary used to remove previous selection...no need to track
+            } else if (selectionRect != null) {
                 double w = Math.abs(e.getX() - selectionX);
                 double h = Math.abs(e.getY() - selectionY);
                 selectionRect.setWidth(w);
@@ -154,24 +273,49 @@ public class MainController {
         });
 
         annotationOverlay.setOnMouseReleased(e -> {
-
-            if (selectionRect != null) {
+            if (e.getButton() == MouseButton.SECONDARY) {
+                // secondary used to remove previous selection...no need to track
+            } else if (selectionRect != null) {
                 int canvasW = (int) spectrogramCanvas.getWidth();
-                this.selectionStartWidthSamples = (selectionRect.getWidth() / canvasW) * (canvasW * FFT_SIZE);
+                this.selectionStartSample = currentSampleOffset + (long)((selectionRect.getX() / canvasW) * (canvasW * fft_size));
+
+                this.selectionStartWidthSamples = (selectionRect.getWidth() / canvasW) * (canvasW * fft_size);
+                int canvasH = (int) spectrogramCanvas.getHeight();
+                double sampleRate = sigMfHelper.getMetadata().global().sampleRate();
+                double centerFreq = sigMfHelper.getMetadata().captures().get(0).frequency();
+                selectionFreqHigh = centerFreq + sampleRate / 2 - (selectionRect.getY() / canvasH) * sampleRate;
+                selectionFreqLow = selectionFreqHigh - (selectionRect.getHeight() / canvasH * sampleRate);
+
                 selectionRect.setFill(Color.rgb(0, 120, 215, 0.3));
                 selectionRect.setStroke(Color.rgb(0, 120, 215, 1.0));
                 selectionRect.setStrokeWidth(2);
-                double sampleRate = sigMfHelper.getMetadata().global().sampleRate();
-                System.out.printf(
-                    "Selection Start: %.3f ms | Duration: %.3f ms | Canvas Width: %.1f px\n",
-                    selectionStartSample / sampleRate * 1e3,
-                    selectionStartWidthSamples / sampleRate * 1e3,
-                    spectrogramCanvas.getWidth() // Add this to debug the "overlap"
+
+                logger.debug(
+                    "\n\tSelection Start: {} | Duration: {} | Canvas Width: {} px\n",
+                    String.format("%.3f ms", selectionStartSample / sampleRate * 1e3),
+                    String.format("%.3f ms", selectionStartWidthSamples / sampleRate * 1e3),
+                    String.format("%.1f", spectrogramCanvas.getWidth())
                 );
+
+                // update UI to display selection
+                lblSelectionStart.setText(
+                    String.format("%.3f ms", selectionStartSample / sampleRate * 1e3));
+                lblSelectionDur.setText(
+                    String.format("%.3f ms", selectionStartWidthSamples / sampleRate * 1e3));
+                lblFreqLow.setText(String.format("%.6f MHz", selectionFreqLow / 1e6));
+                lblFreqHigh.setText(String.format("%.6f MHz", selectionFreqHigh / 1e6));
             }
         });
     }
 
+    // ============================================================================================
+    //                                  Event Handlers
+    // ============================================================================================
+
+    /**
+     * Open an input SigMF file
+     * @param event The event that triggered this handler
+     */
     @FXML
     public void handleOpen(ActionEvent event) {
         FileChooser fileChooser = new FileChooser();
@@ -192,16 +336,20 @@ public class MainController {
 
         if (selectedFile != null) {
 
-            System.out.println("Selected file: " + selectedFile.getAbsolutePath());
+            logger.info("Selected file: {}", selectedFile.getAbsolutePath());
+
             // Add logic here to pass the file to your JDSP processing service
             try {
                 sigMfHelper.load(selectedFile.toPath());
 
                 // clear annotations and map
                 annotationOverlay.getChildren().clear();
-                selectionRect.setVisible(false);
                 annotationOverlay.getChildren().add(selectionRect);
+                selectionRect.setVisible(false);
                 annotationMap.clear();
+
+                // track the input meta file
+                input_file = selectedFile.toPath();
 
                 // load annotations
                 List<SigMfAnnotation> fileAnnotations = sigMfHelper.getParsedAnnotations();
@@ -220,19 +368,23 @@ public class MainController {
                 fileScrollBar.setMax(totalSamples - (spectrogramCanvas.getHeight() * 1024));
                 fileScrollBar.setValue(0);
 
-                System.out.println("Total bytes = " + totalBytes);
-                System.out.println("Total Samples = " + totalSamples);
-                System.out.println("--- SigMF Loaded ---");
-                System.out.println("Sample Rate: " + meta.global().sampleRate() + " Hz");
-                System.out.println("Datatype: " + meta.global().datatype());
-                System.out.println("Total Samples in File: " + totalSamples);
+                logger.info(
+                    "\n\t------- SigMF Loaded -------" +
+                    "\n\tTotal bytes = {} bytes" +
+                    "\n\tTotal Samples = {} samples" +
+                    "\n\tSample Rate = {} Hz " +
+                    "\n\tDatatype = {}",
+                    totalBytes, totalSamples,
+                    meta.global().sampleRate(),
+                    meta.global().datatype());
+
 
                 Platform.runLater(() -> {
                     double canvasW = spectrogramCanvas.getWidth();
 
                     fileScrollBar.setMin(0);
                     // Ensure we don't calculate a negative Max
-                    fileScrollBar.setMax(Math.max(0, totalSamples - (long)(canvasW * FFT_SIZE)));
+                    fileScrollBar.setMax(Math.max(0, totalSamples - (long)(canvasW * fft_size)));
                     fileScrollBar.setValue(0);
                     fileScrollBar.setBlockIncrement(canvasW);
                     updateDisplay();
@@ -245,6 +397,56 @@ public class MainController {
         }
     }
 
+    /**
+     * Save the current set of annotations to file.
+     */
+    @FXML
+    private void handleSave() {
+
+        List<SigMfAnnotation> sortedAnnotations = annotationMap.values().stream()
+            .map(group -> group.data) // Access the field directly
+            .sorted(Comparator.comparingLong(SigMfAnnotation::sampleStart))
+            .toList();
+
+        sigMfHelper.saveSigMF(sortedAnnotations);
+        logger.info("SigMF saved: {} annotations written in chronological order.", sortedAnnotations.size());
+
+    }
+
+    @FXML
+    private void handleAnalyzeSelection(ActionEvent event) {
+        logger.warn("Handle Analyze Selection has not been implemented");
+    }
+
+    /**
+     * Add an annotation based on the current user selection and UI input
+     * This is triggered by the button to add annotations
+     */
+    @FXML
+    private void handleAddAnnotation(ActionEvent event) {
+        SigMfAnnotation selectAnnot = new SigMfAnnotation(
+            (long) selectionStartSample,
+            (long) selectionStartWidthSamples,
+            selectionFreqLow,
+            selectionFreqHigh,
+            selectionNameField.getText(),
+            selectionDescField.getText());
+
+        // NOTE: create rect/label for this annotation.
+        createRectangleForData(selectAnnot);
+
+        // clear selection
+        resetSelection();
+
+        // refresh display
+        updateAnnotationDisplay();
+    }
+
+
+    /**
+     * Handle exiting
+     * @param event
+     */
     @FXML
     public void handleExit(ActionEvent event) {
         Platform.exit();
@@ -268,25 +470,16 @@ public class MainController {
         alert.showAndWait();
     }
 
-    @FXML
-    private StackPane plotContainer;
+    // ============================================================================================
+    //                                  Helper functions
+    // ============================================================================================
 
-    @FXML
-    private Pane frequencyRuler;
 
-    @FXML
-    private HBox timeAxis;
-
-    @FXML
-    private Region axisSpacer;
-
-    @FXML
-    private Canvas spectrogramCanvas;
-
-    @FXML
-    private Pane annotationOverlay;
-
-    // Inside MainController.java or a helper class
+    /**
+     * Convert a double value to color
+     * @param db The double value
+     * @return
+     */
     private Color getColorForMagnitude(double db) {
         // Normalize dB (assume range -100 to 0)
         double normalized = (db + 100) / 100.0;
@@ -298,49 +491,52 @@ public class MainController {
         return Color.RED.interpolate(Color.YELLOW, (normalized - 0.5) / 0.5);
     }
 
-
+    /**
+     * Core update method to redraw GUI
+     */
     public void updateDisplay() {
         if (sigMfHelper.getDataBuffer() == null) return;
 
-        // 1. Get exact pixel width
+        // Get pixel width
         int canvasW = (int) spectrogramCanvas.getWidth();
         int canvasH = (int) spectrogramCanvas.getHeight();
         if (canvasW <= 0) return; // Wait for layout
 
-        int fftSize = 1024; // Freq resolution
+
         var global = sigMfHelper.getMetadata().global();
         String dataType = global.datatype();
         int bytesPerSample = global.getBytesPerSample();
         double sampleRate = global.sampleRate();
 
-        // 2. waterfall[Time][Frequency]
-        double[][] waterfall = new double[canvasW][fftSize];
+        // waterfall[Time][Frequency]
+        double[][] waterfall = new double[canvasW][fft_size];
 
         for (int t = 0; t < canvasW; t++) {
             // t * fftSize determines how many samples per horizontal pixel
-            long sampleIndex = currentSampleOffset + ((long) t * fftSize);
+            long sampleIndex = currentSampleOffset + ((long) t * fft_size);
             int byteOffset = (int) (sampleIndex * bytesPerSample);
 
-            if (byteOffset + (fftSize * bytesPerSample) <= sigMfHelper.getDataBuffer().capacity()) {
+            if (byteOffset + (fft_size * bytesPerSample) <= sigMfHelper.getDataBuffer().capacity()) {
                 waterfall[t] = spectralService.computeMagnitudes(
                     sigMfHelper.getDataBuffer(),
                     byteOffset,
-                    fftSize,
+                    fft_size,
                     dataType
                 );
             } else {
                 // Fill with a very low dB value so the end of file is black
-                waterfall[t] = new double[fftSize];
+                waterfall[t] = new double[fft_size];
                 java.util.Arrays.fill(waterfall[t], -150.0);
             }
         }
 
+        // update labels and Rectangles associated with annotations
         updateAnnotationDisplay();
 
         // selection rectangle
         if (selectionRect != null) {
             double canvasWD = spectrogramCanvas.getWidth();
-            long samplesInView = (long)canvasW * FFT_SIZE;
+            long samplesInView = (long)canvasW * fft_size;
 
             // Calculate new X based on current scroll offset
             double newX = ((double)(selectionStartSample - currentSampleOffset) / samplesInView) * canvasWD;
@@ -358,11 +554,12 @@ public class MainController {
         axisSpacer.setMinWidth(frequencyRuler.getWidth());
         axisSpacer.setPrefWidth(frequencyRuler.getWidth());
 
+
         // --- Update Time Axis ---
         // Add 5 time markers across the width
         for (int i = 0; i <= 4; i++) {
             int xPixel = (canvasW / 4) * i;
-            long sampleAtPixel = currentSampleOffset + ((long) xPixel * fftSize);
+            long sampleAtPixel = currentSampleOffset + ((long) xPixel * fft_size);
             double seconds = (double) sampleAtPixel / sampleRate;
 
             Label timeLabel = new Label(String.format(" %.3fs", seconds));
@@ -381,35 +578,42 @@ public class MainController {
         updateRulers();
         renderSpectrogram(waterfall);
     }
-
-    private Rectangle createRectangleForData(SigMfAnnotation data) {
+    /**
+     * Prepares a {@code Label} and a {@code Rectangle} to represent the
+     * provided annotation
+     * @param data Current Annotation
+     * @return
+     */
+    private Rectangle createRectangleForData(SigMfAnnotation cAnnot) {
         Rectangle rect = new Rectangle(); // Position will be set by updateDisplay()
-        rect.setFill(Color.rgb(0, 120, 215, 0.4));
+
+        rect.setFill(annotationColorPicker.getValue());
         rect.setStroke(defaultAnnotColor);
         rect.setStrokeWidth(2);
         rect.setCursor(Cursor.HAND);
 
-        // 1. Create the Label
-        Label label = new Label(data.label() != null ? data.label() : "Unnamed");
+        // Create the Label
+        // --------------------------------------
+        Label label = new Label(cAnnot.label() != null ? cAnnot.label() : "Unnamed");
         label.setTextFill(Color.WHITE);
         label.setStyle("-fx-font-family: 'Consolas'; -fx-font-size: 11px; -fx-background-color: rgba(0,0,0,0.5);");
         label.setPadding(new Insets(2));
         label.setMouseTransparent(true); // So the label doesn't block clicking the box
 
-        // 2. Store the association
+        // Store the association
+        // --------------------------------------
         AnnotationGroup group = new AnnotationGroup();
         group.rect = rect;
         group.label = label;
-        group.data = data;
+        group.data = cAnnot;
         annotationMap.put(rect, group);
 
         annotationOverlay.getChildren().addAll(rect, label);
 
-
         // set up the tool tip
         String tooltipText = String.format("Label: %s\nComment: %s",
-                            data.label() != null ? data.label() : "N/A",
-                            data.comment() != null ? data.comment() : "No comment");
+                            cAnnot.label() != null ? cAnnot.label() : "N/A",
+                            cAnnot.comment() != null ? cAnnot.comment() : "No comment");
 
         Tooltip tooltip = new Tooltip(tooltipText);
         tooltip.setStyle("-fx-font-family: 'Consolas'; -fx-background-color: #333; -fx-text-fill: #2ecc71;");
@@ -422,15 +626,47 @@ public class MainController {
             e.consume();
 
             if (e.getButton() == MouseButton.SECONDARY) {
+                // NOTE: Support removing selected annotation
+                //       with the right mouse button.
                 annotationOverlay.getChildren().remove(rect);
-                annotationMap.remove(rect);
+                removeAnnotation(rect);
+            } else {
+                // Note: update selection to point to the current annotation
+                resetSelection();
+
+                // prepare current annotation for analysis
+                selectionStartSample = cAnnot.sampleStart();
+                selectionStartSample = cAnnot.sampleCount();
+                selectionFreqLow =  cAnnot.freqLowerEdge();
+                selectionFreqHigh = cAnnot.freqUpperEdge();
+                selectionRect.setVisible(true);
+
+                //---------------  update UI  ------------------------
+                selectionNameField.setText(cAnnot.label());
+                selectionDescField.setText(cAnnot.comment());
+
+                lblFreqLow.setText(
+                    String.format("%.6f MHz", cAnnot.freqLowerEdge()/1e6));
+                lblFreqHigh.setText(
+                    String.format("%.6f MHz", cAnnot.freqUpperEdge()/1e6));
+                lblSelectionStart.setText(String.format("%d samples", cAnnot.sampleStart()));
+                lblSelectionDur.setText(String.format("%d samples", cAnnot.sampleCount()));
+
+
             }
         });
-
-
         return rect;
     }
 
+
+    /**
+     * Update annotations displayed
+     *
+     * This function will check if user enable/disabled annotations
+     * It will pull from the default and custom color maps
+     * It will determine which annotations are actually visible in
+     * in the current time frame.
+     */
     public void updateAnnotationDisplay() {
 
         annotationMap.forEach((rect, group) -> {
@@ -441,8 +677,8 @@ public class MainController {
 
             // 1. Calculate Horizontal (Time) Position
             long offsetInSamples = group.data.sampleStart() - currentSampleOffset;
-            double x = (double) offsetInSamples / FFT_SIZE;
-            double width = (double) group.data.sampleCount() / FFT_SIZE;
+            double x = (double) offsetInSamples / fft_size;
+            double width = (double) group.data.sampleCount() / fft_size;
 
             // 2. Calculate Vertical (Frequency) Position
             // Map Frequency back to 0.0-1.0 range of the current capture bandwidth
@@ -453,6 +689,16 @@ public class MainController {
             // Invert for Canvas (0 is top)
             double y = (1.0 - fHighRel) * canvasH;
             double height = (fHighRel - fLowRel) * canvasH;
+
+            // NOTE: check for custom color provided the label for this annotation
+            if (annotationStyles.containsKey(group.label.getText())) {
+                Color styleColor = annotationStyles.get(group.label.getText());
+                rect.setStroke(styleColor);
+                rect.setFill(styleColor.deriveColor(0,1,1,0.3)); // apply 0.3 alpha to the fill
+            } else {
+                rect.setStroke(annotationColorPicker.getValue());
+                rect.setFill(annotationColorPicker.getValue().deriveColor(0,1,1,0.3)); // apply 0.3 alpha to the fill
+            }
 
             rect.setX(x);
             rect.setWidth(width);
@@ -467,12 +713,29 @@ public class MainController {
 
             // Match visibility
             group.label.setVisible(rect.isVisible());
+
+            if (!showAnnotationsCheckbox.isSelected()) {
+                // keep hidden
+                rect.setVisible(false);
+                group.label.setVisible(false);
+            }
         });
+    }
+
+    /**
+     * Handle opening the dialog to map a label to a custom color scheme
+     */
+    @FXML
+    private void handleOpenColorDialog(ActionEvent event) {
+        showAnnotationStyleDialog();
     }
 
      /**
      * This is your main rendering loop.
      * It connects the math (SpectralService) to the UI (Canvas).
+     *
+     * This writes directly to the PixelWriter for speed.
+     * @param waterfallData The input data
      */
     private void renderSpectrogram(double[][] waterfallData) {
         GraphicsContext gc = spectrogramCanvas.getGraphicsContext2D();
@@ -480,13 +743,13 @@ public class MainController {
 
         int canvasW = (int) spectrogramCanvas.getWidth();
         int canvasH = (int) spectrogramCanvas.getHeight();
-        int fftSize = waterfallData[0].length;
+        int fft_size = waterfallData[0].length;
 
         for (int t = 0; t < canvasW; t++) {
             for (int f = 0; f < canvasH; f++) {
                 // Map Canvas Y pixel to FFT Bin
-                // We scale the fftSize down to the canvasH
-                int fftBinIndex = (int) ((double) f / canvasH * fftSize);
+                // We scale the fft_size down to the canvasH
+                int fftBinIndex = (int) ((double) f / canvasH * fft_size);
 
                 double db = waterfallData[t][fftBinIndex];
                 Color color = getColorForMagnitude(db);
@@ -497,6 +760,9 @@ public class MainController {
         }
     }
 
+    /**
+     * Update the vertical frequency axis
+     */
     private void updateRulers() {
         frequencyRuler.getChildren().clear();
         if (sigMfHelper.getMetadata() == null) return;
@@ -531,37 +797,6 @@ public class MainController {
         }
     }
 
-    public void printSelectionDetails(Rectangle rect) {
-        var global = sigMfHelper.getMetadata().global();
-        var capture = sigMfHelper.getMetadata().captures().get(0);
-
-        double canvasW = spectrogramCanvas.getWidth();
-        double canvasH = spectrogramCanvas.getHeight();
-        double sampleRate = global.sampleRate();
-        double centerFreq = capture.frequency();
-
-        // --- Frequency Mapping (Vertical) ---
-        // Remember: we inverted Y so low freq is at the bottom
-        double yBottom = canvasH - (rect.getY() + rect.getHeight());
-        double yTop = canvasH - rect.getY();
-
-        double freqStart = centerFreq + ((yBottom / canvasH) - 0.5) * sampleRate;
-        double freqEnd = centerFreq + ((yTop / canvasH) - 0.5) * sampleRate;
-        double bandwidth = freqEnd - freqStart;
-
-        // --- Time Mapping (Horizontal) ---
-        long sampleStart = currentSampleOffset + (long)((rect.getX() / canvasW) * (canvasW * FFT_SIZE));
-        double timeStart = (double) sampleStart / sampleRate;
-        double duration = (rect.getWidth() / canvasW) * (canvasW * FFT_SIZE) / sampleRate;
-
-        System.out.printf(
-            "Selection: %.2f MHz to %.2f MHz | BW: %.2f kHz | Duration: %.3f ms | Time Start: %.3f ms%n",
-            freqStart/1e6, freqEnd/1e6, bandwidth/1e3, duration*1000,
-            this.selectionStartSample / sigMfHelper.getMetadata().global().sampleRate() * 1e3);
-    }
-
-    // Simple helper class for coordinate tracking
-    private static class Delta { double x, y; }
 
 
     // Quick helper to show errors to the user
@@ -571,5 +806,45 @@ public class MainController {
         alert.setContentText(content);
         alert.showAndWait();
     }
+
+
+
+    /**
+     * Show dialog to configure custom color to annotation label mappings.
+     * This is used to apply different color schemes based on the
+     * annotation id.
+     */
+    public void showAnnotationStyleDialog() {
+        try {
+            // Use your FxWeaver or FXMLLoader as before
+            FXMLLoader loader = new FXMLLoader(getClass().getResource("annotation-style-dialog.fxml"));
+            Parent content = loader.load();
+
+            AnnotationStyleDialogController controller = loader.getController();
+
+            // Pass the CURRENT map to the controller to populate its TableView
+            controller.setStyles(annotationStyles);
+
+            Dialog<Map<String, Color>> dialog = new Dialog<>();
+            dialog.getDialogPane().setContent(content);
+            // ... (title and button types)
+            // This creates the physical buttons at the bottom of the dialog
+            dialog.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
+
+            // When the user clicks OK, grab the updated map from the controller
+            dialog.setResultConverter(bt -> bt == ButtonType.OK ? controller.getUpdatedStyles() : null);
+
+            dialog.showAndWait().ifPresent(updatedMap -> {
+                this.annotationStyles.clear();
+                this.annotationStyles.putAll(updatedMap);
+                updateDisplay(); // Redraw canvas with new colors
+            });
+
+        } catch (IOException e) {
+            logger.error("Failed to open styles dialog", e);
+        }
+    }
+
+
 
 }

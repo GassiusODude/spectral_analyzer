@@ -1,11 +1,20 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <?import javafx.scene.canvas.Canvas?>
-<?import javafx.scene.layout.StackPane?>
-<?import javafx.scene.layout.Pane?>
-<?import javafx.scene.layout.VBox?>
-<?import javafx.scene.layout.HBox?>
+
+<?import javafx.scene.control.Button?>
+<?import javafx.scene.control.CheckBox?>
+<?import javafx.scene.control.ColorPicker?>
+<?import javafx.scene.control.Label?>
+<?import javafx.scene.control.Separator?>
+<?import javafx.scene.control.TextField?>
 <?import javafx.scene.layout.BorderPane?>
+<?import javafx.scene.layout.GridPane?>
+<?import javafx.scene.layout.HBox?>
+<?import javafx.scene.layout.Pane?>
 <?import javafx.scene.layout.Region?>
+<?import javafx.scene.layout.StackPane?>
+<?import javafx.scene.layout.VBox?>
+
 <?import javafx.scene.control.*?>
 <VBox prefHeight="400" prefWidth="600"
       minHeight="400" minWidth="600"
@@ -18,6 +27,7 @@
           <Menu text="File">
             <items>
               <MenuItem text="Open Signal..." onAction="#handleOpen" />
+              <MenuItem text="Save Signal..." onAction="#handleSave" />
               <SeparatorMenuItem />
               <MenuItem text="Exit" onAction="#handleExit" />
             </items>
@@ -44,14 +54,88 @@
               </children>
             </StackPane>
           </center>
+          <right>
+            <VBox spacing="20" prefWidth="220" style="-fx-background-color: #2a2a2a; -fx-padding: 15;">
+              <children>
+                  <VBox spacing="5">
+                      <Label text="NFFT (Resolution)" style="-fx-text-fill: #cccccc; -fx-font-size: 11;"/>
+                      <Slider fx:id="nfftSlider" min="6" max="13" value="10"
+                              majorTickUnit="1" minorTickCount="0"
+                              snapToTicks="true" showTickMarks="true"/>
+                      <Label fx:id="lblNfftValue" text="1024" style="-fx-text-fill: #00aaff;"/>
+                  </VBox>
+                  <Separator opacity="0.3"/>
+                  <!-- SECTION 1: ANNOTATION SETTINGS -->
+                  <VBox spacing="10">
+                    <Label text="ANNOTATIONS" style="-fx-text-fill: #00aaff; -fx-font-weight: bold; -fx-font-size: 12;"/>
+                    <CheckBox fx:id="showAnnotationsCheckbox" text="Show Annotations"
+                              selected="true" style="-fx-text-fill: white;" onAction="#updateAnnotationDisplay"/>
+
+                    <Label text="Global Color" style="-fx-text-fill: #2ecc71; -fx-font-size: 10;"/>
+                    <ColorPicker fx:id="annotationColorPicker" maxWidth="Infinity" onAction="#updateAnnotationDisplay"
+                                  prefHeight="40.0" minHeight="30.0"/>
+                    <Button text="Edit Label Colors..." maxWidth="Infinity" onAction="#handleOpenColorDialog"/>
+                  </VBox>
+
+                  <Separator opacity="0.3"/>
+
+                  <!-- SECTION 2: SELECTION INFO -->
+                  <VBox spacing="10">
+                    <Label text="CURRENT SELECTION" style="-fx-text-fill: #00aaff; -fx-font-weight: bold; -fx-font-size: 12;"/>
+
+                    <GridPane hgap="10" vgap="5">
+                        <Label text="Label:" style="-fx-text-fill: #aaaaaa;" GridPane.columnIndex="0" GridPane.rowIndex="0"/>
+                        <TextField fx:id="selectionNameField" promptText="e.g., Give me a name!"
+                                  style="-fx-background-color: #333333; -fx-text-fill: white;"
+                                  GridPane.columnIndex="1" GridPane.rowIndex="0"/>
+
+                        <Label text="Description:" style="-fx-text-fill: #aaaaaa;" GridPane.columnIndex="0" GridPane.rowIndex="1"/>
+                        <TextArea fx:id="selectionDescField" promptText="e.g., Describe Me"
+                                  style="-fx-control-inner-background: #333333; -fx-text-fill: white;"
+                                  prefRowCount="10" wrapText="true"
+                                  GridPane.columnIndex="0" GridPane.rowIndex="2" GridPane.columnSpan="2"/>
+
+                        <Label text="Start:" style="-fx-text-fill: #aaaaaa;" GridPane.columnIndex="0" GridPane.rowIndex="3"/>
+                        <Label fx:id="lblSelectionStart" text="0.00 ms" style="-fx-text-fill: white;" GridPane.columnIndex="1" GridPane.rowIndex="3"/>
+
+                        <Label text="Dur:" style="-fx-text-fill: #aaaaaa;" GridPane.columnIndex="0" GridPane.rowIndex="4"/>
+                        <Label fx:id="lblSelectionDur" text="0.00 ms" style="-fx-text-fill: white;" GridPane.columnIndex="1" GridPane.rowIndex="4"/>
+
+                        <Label text="Freq Low:" style="-fx-text-fill: #aaaaaa;" GridPane.columnIndex="0" GridPane.rowIndex="5"/>
+                        <Label fx:id="lblFreqLow" text="0.0 MHz" style="-fx-text-fill: white;" GridPane.columnIndex="1" GridPane.rowIndex="5"/>
+
+                        <Label text="Freq High:" style="-fx-text-fill: #aaaaaa;" GridPane.columnIndex="0" GridPane.rowIndex="6"/>
+                        <Label fx:id="lblFreqHigh" text="0.00 MHz" style="-fx-text-fill: white;" GridPane.columnIndex="1" GridPane.rowIndex="6"/>
+                    </GridPane>
+                    <Button text="Analyze Selection" maxWidth="Infinity"
+                            style="-fx-background-color: #2e0ca8; -fx-text-fill: white;"
+                            onAction="#handleAnalyzeSelection"/>
+                    <Button text="Add to Annotations" maxWidth="Infinity"
+                            style="-fx-background-color: #4CAF50; -fx-text-fill: white;"
+                            onAction="#handleAddAnnotation"/>
+                  </VBox>
+
+                  <Region VBox.vgrow="ALWAYS" />
+                </children>
+            </VBox>
+        </right>
+
           <!-- Time Labels -->
           <bottom>
             <VBox prefHeight="50.0" alignment="CENTER_LEFT" style="-fx-background-color: #1a1a1a;">
-              <HBox fx:id="timeAxis" prefHeight="25" alignment="CENTER_LEFT" style="-fx-background-color: #1a1a1a;">
-                <!-- Start time axis where canvas starts (offset from frequency axis)-->
-                <Region fx:id="axisSpacer" prefWidth="80" />
-              </HBox>
-              <ScrollBar fx:id="fileScrollBar" min="0" max="100" orientation="HORIZONTAL" />
+                <HBox fx:id="timeAxis" prefHeight="25" alignment="CENTER_LEFT" style="-fx-background-color: #1a1a1a;">
+                    <!-- 1. Left Spacer (matches Frequency Ruler) -->
+                    <Region fx:id="axisSpacer" prefWidth="80" />
+
+                    <!-- 2. The Actual Labels Area -->
+                    <!-- Use HBox.hgrow="ALWAYS" so this area expands to fill the middle -->
+                    <HBox fx:id="timeLabelsContainer" HBox.hgrow="ALWAYS" />
+
+                    <!-- 3. Right Spacer (matches Side Panel width) -->
+                    <Region fx:id="rightAxisSpacer" prefWidth="220" minWidth="220" />
+                </HBox>
+
+                <ScrollBar fx:id="fileScrollBar" min="0" max="100" orientation="HORIZONTAL" />
             </VBox>
           </bottom>
       </BorderPane>

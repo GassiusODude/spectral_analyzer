@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+
+<VBox xmlns="http://javafx.com"
+      xmlns:fx="http://javafx.com"
+      fx:controller="net.kcundercover.spectral_analyzer.AnnotationStyleDialogController"
+      spacing="15" style="-fx-padding: 20;">
+
+    <!-- 1. The Table at the top -->
+    <TableView fx:id="table" editable="true" VBox.vgrow="ALWAYS">
+        <columns>
+            <TableColumn fx:id="keyCol" text="Key" prefWidth="150"/>
+            <TableColumn fx:id="colorCol" text="Color" prefWidth="100"/>
+        </columns>
+    </TableView>
+
+    <!-- 2. The Input Form in the middle -->
+    <GridPane hgap="10" vgap="10">
+        <Label text="Label:" GridPane.rowIndex="0" GridPane.columnIndex="0"/>
+        <TextField fx:id="labelField" GridPane.rowIndex="0" GridPane.columnIndex="1"/>
+
+        <Label text="Color:" GridPane.rowIndex="1" GridPane.columnIndex="0"/>
+        <ColorPicker fx:id="colorPicker" GridPane.rowIndex="1" GridPane.columnIndex="1"/>
+    </GridPane>
+
+    <!-- 3. The Buttons at the bottom -->
+    <HBox spacing="10" alignment="CENTER_RIGHT">
+        <Button fx:id="addBtn" text="Add" onAction="#handleAddStyle"/>
+        <Button fx:id="removeBtn" text="Remove" onAction="#handleRemoveStyle"/>
+        <Region HBox.hgrow="ALWAYS" />
+        <Button fx:id="loadBtn" text="Load" onAction="#handleLoadStyles"/>
+        <Button fx:id="saveBtn" text="Save" onAction="#handleSaveStyles"/>
+    </HBox>
+
+</VBox>
