@@ -32,12 +32,16 @@ import javafx.scene.layout.VBox;
 import javafx.scene.shape.Rectangle;
 import javafx.scene.paint.Color;
 import javafx.scene.Parent;
+import javafx.scene.Scene;
 import javafx.stage.FileChooser;
+import javafx.stage.Modality;
+import javafx.stage.Stage;
 import javafx.stage.Window;
 import javafx.util.Duration;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -48,6 +52,7 @@ import java.util.Optional;
 import net.rgielen.fxweaver.core.FxmlView;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
+import org.apache.commons.math3.complex.Complex;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import java.nio.file.Path;
@@ -69,6 +74,7 @@ public class MainController {
     private final Map<String, Color> annotationStyles = new HashMap<>();
 
     @Autowired private SpectralService spectralService;
+    @Autowired private ExtractDownConvertService downConvertService;
 
     // ------------------------- majority of GUI  -----------------------------
     // main plot of spectrogram, overlays
@@ -98,7 +104,6 @@ public class MainController {
     @FXML private TextArea selectionDescField;
     @FXML private CheckBox showAnnotationsCheckbox;
     @FXML private ColorPicker annotationColorPicker;
-
 
 
     /**
@@ -144,7 +149,7 @@ public class MainController {
     private double selectionStartWidthSamples = 0; // How many samples wide it is
     private double selectionFreqLow = 0;
     private double selectionFreqHigh = 0;
-
+    private boolean selectionComplete = false;
 
     /**
      * Resets the variables regarding the user selection and
@@ -156,6 +161,7 @@ public class MainController {
         selectionStartWidthSamples = 0; // How many samples wide it is
         selectionFreqLow = 0;
         selectionFreqHigh = 0;
+        selectionComplete = false;
 
         // NOTE: reset the UI display
         lblSelectionStart.setText("0 seconds");
@@ -285,7 +291,7 @@ public class MainController {
                 double centerFreq = sigMfHelper.getMetadata().captures().get(0).frequency();
                 selectionFreqHigh = centerFreq + sampleRate / 2 - (selectionRect.getY() / canvasH) * sampleRate;
                 selectionFreqLow = selectionFreqHigh - (selectionRect.getHeight() / canvasH * sampleRate);
-
+                selectionComplete = true;
                 selectionRect.setFill(Color.rgb(0, 120, 215, 0.3));
                 selectionRect.setStroke(Color.rgb(0, 120, 215, 1.0));
                 selectionRect.setStrokeWidth(2);
@@ -415,8 +421,64 @@ public class MainController {
 
     @FXML
     private void handleAnalyzeSelection(ActionEvent event) {
-        logger.warn("Handle Analyze Selection has not been implemented");
+
+        if (!selectionComplete) {
+            showErrorAlert(
+                "Selection Incomplete",
+                "Select time/freq segment or click on annotation");
+            return;
+        }
+
+        double inputFs = sigMfHelper.getMetadata().global().sampleRate();
+        double inputFc = sigMfHelper.getMetadata().captures().get(0).frequency();
+        double currBw = selectionFreqHigh - selectionFreqLow;
+        double center = (selectionFreqHigh + selectionFreqLow) / 2.0 - inputFc;
+
+        int down = (int) Math.ceil(inputFs/currBw);
+
+        double targetFs = inputFs / down;
+
+        final double finalTargetFs = targetFs;
+        String dataType = sigMfHelper.getMetadata().global().datatype();
+
+
+        // 2. Run off-thread to avoid [lication Thread] freezes
+        CompletableFuture.supplyAsync(() -> downConvertService.extractAndDownConvert(
+                sigMfHelper.getDataBuffer(),
+                selectionStartSample,
+                (int) selectionStartWidthSamples,
+                dataType,
+                center / inputFs,
+                down
+        )).thenAccept(data -> {
+            // 3. Open the new Dialog on the UI thread
+            Platform.runLater(() -> openAnalysisDialog(data, finalTargetFs));
+        });
     }
+
+    private void openAnalysisDialog(double[][] data, double fs) {
+        try {
+            FXMLLoader loader = new FXMLLoader(getClass().getResource("analysis-dialog.fxml"));
+            Parent root = loader.load();
+
+            // Get the controller and "inject" the data
+            AnalysisDialogController controller = loader.getController();
+            controller.setAnalysisData(data, fs);
+
+            Stage stage = new Stage();
+            stage.setTitle("Signal Analysis");
+            stage.setScene(new Scene(root));
+            stage.setOnCloseRequest(event -> {
+                controller.performCleanup(); // Move your logger and data release here
+            });
+
+            stage.initModality(Modality.NONE); // Allows user to interact with both windows
+            stage.show();
+        } catch (IOException e) {
+            logger.error("Failed to open Analysis Dialog", e);
+        }
+    }
+
 
     /**
      * Add an annotation based on the current user selection and UI input
@@ -636,7 +698,7 @@ public class MainController {
 
                 // prepare current annotation for analysis
                 selectionStartSample = cAnnot.sampleStart();
-                selectionStartSample = cAnnot.sampleCount();
+                selectionStartWidthSamples = cAnnot.sampleCount();
                 selectionFreqLow =  cAnnot.freqLowerEdge();
                 selectionFreqHigh = cAnnot.freqUpperEdge();
                 selectionRect.setVisible(true);
@@ -644,7 +706,7 @@ public class MainController {
                 //---------------  update UI  ------------------------
                 selectionNameField.setText(cAnnot.label());
                 selectionDescField.setText(cAnnot.comment());
-
+                selectionComplete = true;
                 lblFreqLow.setText(
                     String.format("%.6f MHz", cAnnot.freqLowerEdge()/1e6));
                 lblFreqHigh.setText(

@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.scene.chart.*?>
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+
+<VBox prefHeight="600.0" prefWidth="800.0" spacing="10" style="-fx-padding: 10;"
+      xmlns="http://javafx.com"
+      xmlns:fx="http://javafx.com"
+      fx:controller="net.kcundercover.spectral_analyzer.AnalysisDialogController">
+
+    <Label text="Signal Analysis View" style="-fx-font-size: 18; -fx-font-weight: bold;" />
+
+    <TabPane tabClosingPolicy="UNAVAILABLE" VBox.vgrow="ALWAYS">
+        <tabs>
+            <!-- Magnitude Plot-->
+            <Tab text="Time Domain">
+                <StackPane fx:id="containerMagn"></StackPane>
+            </Tab>
+
+            <!-- Frequency PLot -->
+            <Tab text="Frequency">
+                <StackPane fx:id="containerFreq"></StackPane>
+            </Tab>
+
+            <!-- PSD -->
+            <Tab text="PWelch">
+                <StackPane fx:id="containerPSD"></StackPane>
+            </Tab>
+        </tabs>
+    </TabPane>
+
+    <HBox alignment="CENTER_RIGHT" spacing="10">
+        <Button text="Export CSV" onAction="#handleExportCsv" />
+        <Button text="Close" onAction="#handleClose" prefWidth="80" />
+    </HBox>
+</VBox>
