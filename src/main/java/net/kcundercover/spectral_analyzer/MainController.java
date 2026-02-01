@@ -8,8 +8,10 @@ import javafx.application.Platform;
 import javafx.beans.value.ChangeListener;
 import javafx.scene.control.Alert;
 import javafx.scene.control.Alert.AlertType;
+import javafx.scene.control.Button;
 import javafx.scene.control.ButtonType;
 import javafx.scene.control.CheckBox;
+import javafx.scene.control.CheckMenuItem;
 import javafx.scene.control.ColorPicker;
 import javafx.scene.control.Dialog;
 import javafx.scene.control.Slider;
@@ -60,17 +62,23 @@ import net.kcundercover.spectral_analyzer.sigmf.SigMfHelper;
 import net.kcundercover.spectral_analyzer.sigmf.SigMfMetadata;
 import net.kcundercover.spectral_analyzer.sigmf.SigMfAnnotation;
 @Component
-@FxmlView("main-scene.fxml") // Links to the XML file above
+@FxmlView("main-scene.fxml")
 public class MainController {
     private static final Logger logger = LoggerFactory.getLogger(MainController.class);
 
+    // throttle updates
     private final AtomicBoolean redrawPending = new AtomicBoolean(false);
+
     private SigMfHelper sigMfHelper = new SigMfHelper();
     private long currentSampleOffset = 0; // Where we are in the file
-    private int fft_size = 1024;
+    private int fft_size;
+
+    // track the input file path
     private Path input_file;
-    // Simple helper class for coordinate tracking
-    private static class Delta { double x, y; }
+
+    /**
+     * Custom style for annotation based on label
+     */
     private final Map<String, Color> annotationStyles = new HashMap<>();
 
     @Autowired private SpectralService spectralService;
@@ -91,9 +99,21 @@ public class MainController {
 
     // -----------------------------  controls  -------------------------------
 
+    // Menu
+    @FXML CheckMenuItem fastDownConverter;
+    @FXML ColorPicker selectColorPicker;
+
+    // ==========================================
+    // Right Panel
+    // ==========================================
+
     // FFT control and display
     @FXML private Slider nfftSlider;
     @FXML private Label lblNfftValue;
+
+    // Annotations
+    @FXML private CheckBox showAnnotationsCheckbox;
+    @FXML private ColorPicker annotationColorPicker;
 
     // selection
     @FXML private Label lblSelectionStart;
@@ -102,43 +122,48 @@ public class MainController {
     @FXML private Label lblFreqHigh;
     @FXML private TextField selectionNameField;
     @FXML private TextArea selectionDescField;
-    @FXML private CheckBox showAnnotationsCheckbox;
-    @FXML private ColorPicker annotationColorPicker;
+    @FXML private Button btnAnalyzeSelection;
 
 
     /**
      * AnnotationGroup is used to track the UI {@code label} and {@code rect})
-     * and the SigMFAnnotation {@code data}.
+     * {@code tooltip} and the SigMFAnnotation {@code data}.
      *
      * {@code label} is used to show the type of annotation
-     * {@code rect} is a overlaying Rectangle to show the time/frequency position
-     * {@code data} is the Annotation information.
+     * {@code rect} is a overlaying Rectangle to visually show time/frequency position
+     * {@code data} is the SigMF Annotation information.
+     * {@code tooltip} is the comment from the annotation shown as a tooltip for the rectangle.
      */
     private static class AnnotationGroup {
         Rectangle rect;
         Label label;
         SigMfAnnotation data;
+        Tooltip tooltip;
     }
 
-    /** This mapping tracks the AnnotationGroup by the rectangle overlay */
+    /** This mapping tracks the AnnotationGroup based on the rectangle overlay */
     private final Map<Rectangle, AnnotationGroup> annotationMap = new HashMap<>();
 
-
     /**
-     * Remove the {@code rect} and the associated label from
-     * @param rect
+     * Remove the {@code rect} and the associated label/tooltip
+     * @param rect The rectangle object used as key to the {@code annotationMap}
      */
     public void removeAnnotation(Rectangle rect) {
+        // remove the entry from annotationMap
         AnnotationGroup group = annotationMap.remove(rect);
+
         if (group != null) {
-            annotationOverlay.getChildren().removeAll(
-                group.rect,
-                group.label
-            );
+            // Remote tooltips
+            if (group.tooltip != null) {
+                Tooltip.uninstall(group.rect, group.tooltip);
+            }
+
+            // remove visuals linked to the annotationOverlay panel
+            annotationOverlay.getChildren().removeAll(group.rect, group.label);
+            logger.info("Annotation and Tooltip removed for: {}", group.data.getLabel());
         }
     }
 
-    private Color defaultAnnotColor = Color.rgb(46, 204, 113, 1.0);
 
     // ============================================================================================
     //                                  Active Selection
@@ -150,6 +175,8 @@ public class MainController {
     private double selectionFreqLow = 0;
     private double selectionFreqHigh = 0;
     private boolean selectionComplete = false;
+    private SigMfAnnotation selectionAnnotation;
+
 
     /**
      * Resets the variables regarding the user selection and
@@ -184,6 +211,8 @@ public class MainController {
     @FXML
     public void initialize() {
         annotationColorPicker.setValue(Color.MAGENTA);
+        selectColorPicker.setValue(Color.LIME);
+
         // initialize selection rectangle to be hidden
         annotationOverlay.getChildren().add(selectionRect);
         selectionRect.setVisible(false);
@@ -203,6 +232,8 @@ public class MainController {
         plotContainer.widthProperty().addListener(resizeListener);
         plotContainer.heightProperty().addListener(resizeListener);
 
+        // initialize fft by nfftSlider
+        fft_size = (int) Math.pow(2, (int) nfftSlider.getValue());
         nfftSlider.valueProperty().addListener((obs, oldVal, newVal) -> {
             // Enforce integer steps and calculate power of 2
             int exponent = newVal.intValue();
@@ -248,6 +279,10 @@ public class MainController {
         // Annotations Overlay Mouse handlers
         // ======================================
         annotationOverlay.setOnMousePressed(e -> {
+            // reset selection (used with analyze selection)
+            selectionAnnotation = null;
+            btnAnalyzeSelection.setDisable(true);
+
             if (e.getButton() == MouseButton.SECONDARY) {
                 // NOTE: Use right click to say delete this current selection
                 resetSelection();
@@ -257,10 +292,8 @@ public class MainController {
                 resetSelection();
                 selectionX = e.getX();
                 selectionY = e.getY();
-
                 selectionRect.setX(selectionX);
                 selectionRect.setY(selectionY);
-
                 selectionRect.setVisible(true);
             }
         });
@@ -283,27 +316,26 @@ public class MainController {
                 // secondary used to remove previous selection...no need to track
             } else if (selectionRect != null) {
                 int canvasW = (int) spectrogramCanvas.getWidth();
-                this.selectionStartSample = currentSampleOffset + (long)((selectionRect.getX() / canvasW) * (canvasW * fft_size));
-
-                this.selectionStartWidthSamples = (selectionRect.getWidth() / canvasW) * (canvasW * fft_size);
                 int canvasH = (int) spectrogramCanvas.getHeight();
                 double sampleRate = sigMfHelper.getMetadata().global().sampleRate();
                 double centerFreq = sigMfHelper.getMetadata().captures().get(0).frequency();
+
+                // track the selection information
+                // --------------------------------------------------
+                this.selectionStartSample = currentSampleOffset + (long)((selectionRect.getX() / canvasW) * (canvasW * fft_size));
+                this.selectionStartWidthSamples = (selectionRect.getWidth() / canvasW) * (canvasW * fft_size);
                 selectionFreqHigh = centerFreq + sampleRate / 2 - (selectionRect.getY() / canvasH) * sampleRate;
                 selectionFreqLow = selectionFreqHigh - (selectionRect.getHeight() / canvasH * sampleRate);
                 selectionComplete = true;
-                selectionRect.setFill(Color.rgb(0, 120, 215, 0.3));
-                selectionRect.setStroke(Color.rgb(0, 120, 215, 1.0));
+
+                // set the characteristics of the selection
+                // --------------------------------------------------
+                selectionRect.setStroke(selectColorPicker.getValue());
+                selectionRect.setFill(selectColorPicker.getValue().deriveColor(0,1,1,0.3));
                 selectionRect.setStrokeWidth(2);
 
-                logger.debug(
-                    "\n\tSelection Start: {} | Duration: {} | Canvas Width: {} px\n",
-                    String.format("%.3f ms", selectionStartSample / sampleRate * 1e3),
-                    String.format("%.3f ms", selectionStartWidthSamples / sampleRate * 1e3),
-                    String.format("%.1f", spectrogramCanvas.getWidth())
-                );
-
                 // update UI to display selection
+                // --------------------------------------------------
                 lblSelectionStart.setText(
                     String.format("%.3f ms", selectionStartSample / sampleRate * 1e3));
                 lblSelectionDur.setText(
@@ -411,17 +443,21 @@ public class MainController {
 
         List<SigMfAnnotation> sortedAnnotations = annotationMap.values().stream()
             .map(group -> group.data) // Access the field directly
-            .sorted(Comparator.comparingLong(SigMfAnnotation::sampleStart))
+            .sorted(Comparator.<SigMfAnnotation>comparingLong(SigMfAnnotation::sampleStart))
             .toList();
 
         sigMfHelper.saveSigMF(sortedAnnotations);
         logger.info("SigMF saved: {} annotations written in chronological order.", sortedAnnotations.size());
-
     }
 
+    /**
+     * Handle Analyze Selection Button event
+     *
+     * Open dialog for user to analyze the selection
+     * @param event Button press that triggered this handler
+     */
     @FXML
     private void handleAnalyzeSelection(ActionEvent event) {
-
         if (!selectionComplete) {
             showErrorAlert(
                 "Selection Incomplete",
@@ -441,30 +477,44 @@ public class MainController {
         final double finalTargetFs = targetFs;
         String dataType = sigMfHelper.getMetadata().global().datatype();
 
-
-        // 2. Run off-thread to avoid [lication Thread] freezes
+        // Run off-thread to avoid [lication Thread] freezes
+        // ==========================================================
+        // NOTE: Runs downconverter to supply analysis dialog
         CompletableFuture.supplyAsync(() -> downConvertService.extractAndDownConvert(
                 sigMfHelper.getDataBuffer(),
                 selectionStartSample,
                 (int) selectionStartWidthSamples,
                 dataType,
                 center / inputFs,
-                down
+                down,
+                fastDownConverter.isSelected()
         )).thenAccept(data -> {
-            // 3. Open the new Dialog on the UI thread
+            // Open the new Dialog on the UI thread
             Platform.runLater(() -> openAnalysisDialog(data, finalTargetFs));
         });
     }
 
+    /**
+     * Open the Analysis Dialog
+     *
+     * Pass the downconverted signal to the diagnosis dialog for processing.
+     * Also links the annotation to dialog for potential updates
+     * @param data Downconverted signal
+     * @param fs Sample rate of the down converted signal
+     */
     private void openAnalysisDialog(double[][] data, double fs) {
         try {
             FXMLLoader loader = new FXMLLoader(getClass().getResource("analysis-dialog.fxml"));
             Parent root = loader.load();
+            double origSampleRate = sigMfHelper.getMetadata().global().sampleRate();
 
             // Get the controller and "inject" the data
+            // ------------------------------------------------------
             AnalysisDialogController controller = loader.getController();
-            controller.setAnalysisData(data, fs);
+            controller.setAnalysisData(data, fs, origSampleRate, selectionAnnotation);
 
+            // Display
+            // ------------------------------------------------------
             Stage stage = new Stage();
             stage.setTitle("Signal Analysis");
             stage.setScene(new Scene(root));
@@ -472,8 +522,14 @@ public class MainController {
                 controller.performCleanup(); // Move your logger and data release here
             });
 
-            stage.initModality(Modality.NONE); // Allows user to interact with both windows
-            stage.show();
+            stage.initModality(Modality.APPLICATION_MODAL); // Allows user to interact with both windows
+            stage.showAndWait();
+
+            // Update annotation display
+            // ------------------------------------------------------
+            // NOTE: potential updates to labels/comments and frequency bounds)
+            updateAnnotationDisplay();
+
         } catch (IOException e) {
             logger.error("Failed to open Analysis Dialog", e);
         }
@@ -486,6 +542,7 @@ public class MainController {
      */
     @FXML
     private void handleAddAnnotation(ActionEvent event) {
+        // prepare the new annotation from the selection information
         SigMfAnnotation selectAnnot = new SigMfAnnotation(
             (long) selectionStartSample,
             (long) selectionStartWidthSamples,
@@ -497,7 +554,7 @@ public class MainController {
         // NOTE: create rect/label for this annotation.
         createRectangleForData(selectAnnot);
 
-        // clear selection
+        // clear selection (the added annotation will be displayed)
         resetSelection();
 
         // refresh display
@@ -514,6 +571,9 @@ public class MainController {
         Platform.exit();
     }
 
+    /**
+     * Handle the About menu item
+     */
     @FXML
     public void handleAbout(ActionEvent event) {
         Alert alert = new Alert(AlertType.INFORMATION);
@@ -536,11 +596,11 @@ public class MainController {
     //                                  Helper functions
     // ============================================================================================
 
-
     /**
-     * Convert a double value to color
+     * Convert the double value to color value
+     *
      * @param db The double value
-     * @return
+     * @return Interpretted color
      */
     private Color getColorForMagnitude(double db) {
         // Normalize dB (assume range -100 to 0)
@@ -650,17 +710,27 @@ public class MainController {
         Rectangle rect = new Rectangle(); // Position will be set by updateDisplay()
 
         rect.setFill(annotationColorPicker.getValue());
-        rect.setStroke(defaultAnnotColor);
+        rect.setStroke(annotationColorPicker.getValue());
         rect.setStrokeWidth(2);
         rect.setCursor(Cursor.HAND);
 
         // Create the Label
         // --------------------------------------
-        Label label = new Label(cAnnot.label() != null ? cAnnot.label() : "Unnamed");
+        Label label = new Label(cAnnot.getLabel() != null ? cAnnot.getLabel() : "Unknown");
         label.setTextFill(Color.WHITE);
         label.setStyle("-fx-font-family: 'Consolas'; -fx-font-size: 11px; -fx-background-color: rgba(0,0,0,0.5);");
         label.setPadding(new Insets(2));
         label.setMouseTransparent(true); // So the label doesn't block clicking the box
+
+        // set up the tool tip
+        String tooltipText = String.format("Label: %s\nComment: %s",
+                            cAnnot.getLabel() != null ? cAnnot.getLabel() : "N/A",
+                            cAnnot.getComment() != null ? cAnnot.getComment() : "No comment");
+
+        Tooltip tooltip = new Tooltip(tooltipText);
+        tooltip.setStyle("-fx-font-family: 'Consolas'; -fx-background-color: #333; -fx-text-fill: #2ecc71;");
+        tooltip.setShowDelay(javafx.util.Duration.millis(300)); // Show quickly
+        Tooltip.install(rect, tooltip);
 
         // Store the association
         // --------------------------------------
@@ -668,21 +738,11 @@ public class MainController {
         group.rect = rect;
         group.label = label;
         group.data = cAnnot;
+        group.tooltip = tooltip;
         annotationMap.put(rect, group);
 
         annotationOverlay.getChildren().addAll(rect, label);
 
-        // set up the tool tip
-        String tooltipText = String.format("Label: %s\nComment: %s",
-                            cAnnot.label() != null ? cAnnot.label() : "N/A",
-                            cAnnot.comment() != null ? cAnnot.comment() : "No comment");
-
-        Tooltip tooltip = new Tooltip(tooltipText);
-        tooltip.setStyle("-fx-font-family: 'Consolas'; -fx-background-color: #333; -fx-text-fill: #2ecc71;");
-        tooltip.setShowDelay(javafx.util.Duration.millis(300)); // Show quickly
-        Tooltip.install(rect, tooltip);
-
-        // Add Right-Click Deletion
         rect.setOnMouseClicked(e -> {
             // do not let event bubble up to the pane
             e.consume();
@@ -692,29 +752,36 @@ public class MainController {
                 //       with the right mouse button.
                 annotationOverlay.getChildren().remove(rect);
                 removeAnnotation(rect);
+
+                // disable the selectionAnnotaiton and button for analyze selection
+                selectionAnnotation = null;
+                btnAnalyzeSelection.setDisable(true);
+
             } else {
                 // Note: update selection to point to the current annotation
                 resetSelection();
 
+                // Assign selected annotation to the one being clicked on.
+                selectionAnnotation = cAnnot;
+                btnAnalyzeSelection.setDisable(false);
+
                 // prepare current annotation for analysis
-                selectionStartSample = cAnnot.sampleStart();
-                selectionStartWidthSamples = cAnnot.sampleCount();
-                selectionFreqLow =  cAnnot.freqLowerEdge();
-                selectionFreqHigh = cAnnot.freqUpperEdge();
+                selectionStartSample = cAnnot.getSampleStart();
+                selectionStartWidthSamples = cAnnot.getSampleCount();
+                selectionFreqLow =  cAnnot.getFreqLowerEdge();
+                selectionFreqHigh = cAnnot.getFreqUpperEdge();
                 selectionRect.setVisible(true);
 
                 //---------------  update UI  ------------------------
-                selectionNameField.setText(cAnnot.label());
-                selectionDescField.setText(cAnnot.comment());
+                selectionNameField.setText(cAnnot.getLabel());
+                selectionDescField.setText(cAnnot.getComment());
                 selectionComplete = true;
                 lblFreqLow.setText(
-                    String.format("%.6f MHz", cAnnot.freqLowerEdge()/1e6));
+                    String.format("%.6f MHz", cAnnot.getFreqLowerEdge()/1e6));
                 lblFreqHigh.setText(
-                    String.format("%.6f MHz", cAnnot.freqUpperEdge()/1e6));
-                lblSelectionStart.setText(String.format("%d samples", cAnnot.sampleStart()));
-                lblSelectionDur.setText(String.format("%d samples", cAnnot.sampleCount()));
-
-
+                    String.format("%.6f MHz", cAnnot.getFreqUpperEdge()/1e6));
+                lblSelectionStart.setText(String.format("%d samples", cAnnot.getSampleStart()));
+                lblSelectionDur.setText(String.format("%d samples", cAnnot.getSampleCount()));
             }
         });
         return rect;
@@ -737,16 +804,16 @@ public class MainController {
             double sampleRate = sigMfHelper.getMetadata().global().sampleRate();
             double centerFreq = sigMfHelper.getMetadata().captures().get(0).frequency();
 
-            // 1. Calculate Horizontal (Time) Position
-            long offsetInSamples = group.data.sampleStart() - currentSampleOffset;
+            // Calculate Horizontal (Time) Position
+            long offsetInSamples = group.data.getSampleStart() - currentSampleOffset;
             double x = (double) offsetInSamples / fft_size;
-            double width = (double) group.data.sampleCount() / fft_size;
+            double width = (double) group.data.getSampleCount() / fft_size;
 
             // 2. Calculate Vertical (Frequency) Position
             // Map Frequency back to 0.0-1.0 range of the current capture bandwidth
             double bw = sampleRate;
-            double fLowRel = (group.data.freqLowerEdge() - (centerFreq - bw/2)) / bw;
-            double fHighRel = (group.data.freqUpperEdge() - (centerFreq - bw/2)) / bw;
+            double fLowRel = (group.data.getFreqLowerEdge() - (centerFreq - bw/2)) / bw;
+            double fHighRel = (group.data.getFreqUpperEdge() - (centerFreq - bw/2)) / bw;
 
             // Invert for Canvas (0 is top)
             double y = (1.0 - fHighRel) * canvasH;
@@ -762,6 +829,10 @@ public class MainController {
                 rect.setFill(annotationColorPicker.getValue().deriveColor(0,1,1,0.3)); // apply 0.3 alpha to the fill
             }
 
+            // update labels and comment
+            group.label.setText(group.data.getLabel());
+            group.tooltip.setText(group.data.getComment());
+
             rect.setX(x);
             rect.setWidth(width);
             rect.setY(y);
@@ -769,7 +840,7 @@ public class MainController {
 
             rect.setVisible(x + width > 0 && x < canvasW);
 
-                    // Position the label at the top-left of the rectangle
+            // Position the label at the top-left of the rectangle
             group.label.setLayoutX(rect.getX());
             group.label.setLayoutY(rect.getY() - 20); // Position slightly above the box
 
@@ -860,7 +931,6 @@ public class MainController {
     }
 
 
-
     // Quick helper to show errors to the user
     private void showErrorAlert(String header, String content) {
         Alert alert = new Alert(AlertType.ERROR);
@@ -868,7 +938,6 @@ public class MainController {
         alert.setContentText(content);
         alert.showAndWait();
     }
-
 
 
     /**
@@ -906,7 +975,4 @@ public class MainController {
             logger.error("Failed to open styles dialog", e);
         }
     }
-
-
-
 }

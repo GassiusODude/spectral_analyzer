@@ -7,16 +7,33 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import net.kcundercover.jdsp.signal.Resampler;
 
-
+/**
+ * A service to calculate downconvert a signal segment
+ *
+ * This class support shifting a signal segment in frequency and then
+ * downsampling.  The downsampled signal is smaller and requires less
+ * processing to analyze.
+ */
 @Service
 public class ExtractDownConvertService {
     private static final Logger logger = LoggerFactory.getLogger(ExtractDownConvertService.class);
 
+    public double[][] extractAndDownConvert(
+            MappedByteBuffer buffer, long startSample,
+            int count, String datatype, double freqOff, int down) {
+        // Default to use the fast mode
+        return extractAndDownConvert(
+            buffer, startSample, count, datatype, freqOff, down, false);
+    }
+
+
     /**
      * Extracts IQ samples and performs a simple down-conversion/resample.
      */
-    public double[][] extractAndDownConvert(MappedByteBuffer buffer, long startSample,
-                                           int count, String datatype, double freqOff, int down) {
+    public double[][] extractAndDownConvert(
+            MappedByteBuffer buffer, long startSample,
+            int count, String datatype, double freqOff, int down,
+            boolean fast) {
 
         logger.info("Extracting {} samples, Down-converting by factor: {}", count, down);
 
@@ -46,9 +63,19 @@ public class ExtractDownConvertService {
             inImag[ind] = imag;
         }
 
-        // downconvert
-        double[][] result = Resampler.downConvertPolyphase(inReal, inImag, freqOff, 1.0, down);
-        logger.info("Resample complted!!");
+        double[][] result;
+        if (fast) {
+            // uses a polyphase downconverter with a moving average filter prior to decimation
+            result = Resampler.downConvertPolyphase(inReal, inImag, freqOff, 1.0, down);
+            logger.info("Downconverter (fast) completed!!");
+        } else {
+            // downconvert (LPF - downconvert)
+            // NOTE: this has better stopband attenuation but is slower.
+            Resampler resampler = new Resampler(1, down); // just use 1 (for up factor)
+            result = resampler.downConvert(inReal, inImag, freqOff, 1.0);
+            logger.info("Downconverter (conventional) completed!!");
+        }
+
         return result;
     }
 }

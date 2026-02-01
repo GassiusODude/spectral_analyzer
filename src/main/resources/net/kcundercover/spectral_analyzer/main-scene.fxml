@@ -32,6 +32,24 @@
               <MenuItem text="Exit" onAction="#handleExit" />
             </items>
           </Menu>
+          <Menu text="Preferences">
+            <items>
+              <MenuItem text="Default Color:">
+                  <graphic>
+                      <ColorPicker fx:id="annotationColorPicker" onAction="#updateAnnotationDisplay" style="-fx-color-label-visible: false;" />
+
+                  </graphic>
+              </MenuItem>
+              <MenuItem text="Select Color:">
+                  <graphic>
+                      <ColorPicker fx:id="selectColorPicker" onAction="#updateDisplay" style="-fx-color-label-visible: false;" />
+                  </graphic>
+              </MenuItem>
+              <CheckMenuItem fx:id="fastDownConverter"
+                            text="Use Fast Resample" />
+            </items>
+          </Menu>
+
           <Menu text="Help">
             <items>
               <MenuItem text="About" onAction="#handleAbout" />
@@ -71,9 +89,6 @@
                     <CheckBox fx:id="showAnnotationsCheckbox" text="Show Annotations"
                               selected="true" style="-fx-text-fill: white;" onAction="#updateAnnotationDisplay"/>
 
-                    <Label text="Global Color" style="-fx-text-fill: #2ecc71; -fx-font-size: 10;"/>
-                    <ColorPicker fx:id="annotationColorPicker" maxWidth="Infinity" onAction="#updateAnnotationDisplay"
-                                  prefHeight="40.0" minHeight="30.0"/>
                     <Button text="Edit Label Colors..." maxWidth="Infinity" onAction="#handleOpenColorDialog"/>
                   </VBox>
 
@@ -107,7 +122,7 @@
                         <Label text="Freq High:" style="-fx-text-fill: #aaaaaa;" GridPane.columnIndex="0" GridPane.rowIndex="6"/>
                         <Label fx:id="lblFreqHigh" text="0.00 MHz" style="-fx-text-fill: white;" GridPane.columnIndex="1" GridPane.rowIndex="6"/>
                     </GridPane>
-                    <Button text="Analyze Selection" maxWidth="Infinity"
+                    <Button fx:id="btnAnalyzeSelection" text="Analyze Selection" maxWidth="Infinity"
                             style="-fx-background-color: #2e0ca8; -fx-text-fill: white;"
                             onAction="#handleAnalyzeSelection"/>
                     <Button text="Add to Annotations" maxWidth="Infinity"
