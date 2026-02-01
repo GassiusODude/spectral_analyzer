@@ -15,7 +15,42 @@ public class SigMfAnnotation {
     // Default constructor for Jackson
     public SigMfAnnotation() {}
 
-        // All-args constructor for MainController (Fixes error #1)
+    /**
+     * Constructor to create a copy from input annot
+     * @param annot Source of annotation to clone.
+     */
+    public SigMfAnnotation(SigMfAnnotation annot) {
+        this.sampleStart = annot.sampleStart;
+        this.sampleCount = annot.sampleCount;
+        this.freqLowerEdge = annot.freqLowerEdge;
+        this.freqUpperEdge = annot.freqUpperEdge;
+        this.label = annot.label;
+        this.comment = annot.comment;
+    }
+
+
+    /**
+     * Create a clone of the
+     * @param annot Source of annotation to clone.
+     */
+    public void copy(SigMfAnnotation annot) {
+        this.sampleStart = annot.sampleStart;
+        this.sampleCount = annot.sampleCount;
+        this.freqLowerEdge = annot.freqLowerEdge;
+        this.freqUpperEdge = annot.freqUpperEdge;
+        this.label = annot.label;
+        this.comment = annot.comment;
+    }
+
+    /**
+     * Constructor with every parameter
+     * @param sampleStart Sample start
+     * @param sampleCount Sample count
+     * @param freqLowerEdge Frequency of lower edge
+     * @param freqUpperEdge frequency of upper edge
+     * @param label Label of the annotation
+     * @param comment Comment of the annotation
+     */
     public SigMfAnnotation(long sampleStart, long sampleCount, Double freqLowerEdge,
                            Double freqUpperEdge, String label, String comment) {
         this.sampleStart = sampleStart;

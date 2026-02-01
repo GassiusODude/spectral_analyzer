@@ -5,6 +5,8 @@ plugins {
 	id 'io.spring.dependency-management' version '1.1.7'
 	id 'org.openjfx.javafxplugin' version '0.1.0'
 	id "com.gradleup.shadow" version "9.3.1"
+    id 'checkstyle'
+    id 'com.github.spotbugs' version '6.0.26' // Third-party plugin
 }
 
 group = 'net.kcundercover'
@@ -35,6 +37,7 @@ shadowJar {
         include "LICENSE"
         include "APACHE_LICENSE-2.0.txt"
         include "EJML_LICENSE-2.0.txt"
+		include "JFREECHART_LICENSE-LGPL.txt"
         into "META-INF"
     }
 
@@ -55,8 +58,6 @@ repositories {
 	// Use local maven repo if available (for JDSP dependency)
 	mavenLocal()
 
-	mavenCentral()
-
 	// If no local, then pull from repo (Github CI)
     maven {
         url 'https://maven.pkg.github.com/GassiusODude/jdsp'
@@ -65,6 +66,7 @@ repositories {
             password = project.findProperty("gpr.token") ?: System.getenv("TOKEN")
         }
     }
+
     mavenCentral()
 }
 
@@ -93,8 +95,21 @@ dependencies {
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 
+
+
 application {
     mainClass = 'net.kcundercover.spectral_analyzer.MainApp'
+}
+
+// Optional: Configure them to show HTML reports
+checkstyle {
+    toolVersion = "10.12.5"
+    ignoreFailures = true
+	showViolations = true
+}
+
+spotbugs {
+    toolVersion = '4.8.3'
 }
 
 tasks.named('test') {

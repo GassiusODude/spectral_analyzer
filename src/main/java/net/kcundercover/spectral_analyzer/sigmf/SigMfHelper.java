@@ -7,6 +7,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import java.io.File;
 import java.io.IOException;
 import java.io.RandomAccessFile;
+import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
@@ -14,6 +15,8 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+
+import org.apache.logging.log4j.internal.annotation.SuppressFBWarnings;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import net.kcundercover.spectral_analyzer.sigmf.SigMfAnnotation;
@@ -70,9 +73,22 @@ public class SigMfHelper {
         return file;
     }
 
-    public SigMfMetadata getMetadata() { return metadata; }
-    public MappedByteBuffer getDataBuffer() { return dataBuffer; }
+    @SuppressFBWarnings(
+        value = "EI_EXPOSE_REP",
+        justification = "SigMfMetadata is immutable")
+    public SigMfMetadata getMetadata() {
+        return metadata;
+    }
+    @SuppressFBWarnings(
+        value = "EI_EXPOSE_REP",
+        justification = "Intentional: buffer is shared for performance")
+    public MappedByteBuffer getDataBuffer() {
+        return dataBuffer;
+    }
 
+    // public ByteBuffer getDataBuffer() {
+    //     return dataBuffer.asReadOnlyBuffer(); // ✅
+    // }
     /**
      * Get the annotations list and return the List of SigMfAnnotations
      * @return List of SigMF Annotation objects

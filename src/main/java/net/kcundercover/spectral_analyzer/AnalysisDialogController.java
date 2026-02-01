@@ -45,7 +45,9 @@ import net.kcundercover.spectral_analyzer.sigmf.SigMfAnnotation;
 public class AnalysisDialogController {
     private static final Logger logger = LoggerFactory.getLogger(AnalysisDialogController.class);
 
-    // the loaded annotation
+    /** Active annotation is a copy of the annotation,
+     * introduced through setAnalysisData()
+     */
     private SigMfAnnotation activeAnnotation;
 
     // variables for displaying and tracking user defined passband/noisefloor characteristics
@@ -224,6 +226,15 @@ public class AnalysisDialogController {
         resetAxes(viewPSD, "Frequency (Hz)", "Power/Hz");
     }
 
+    /**
+     * Get updated annotation
+     *
+     *
+     * @return Return a copy of the updated annotation
+     */
+    public SigMfAnnotation getUpdatedAnnotation() {
+        return new SigMfAnnotation(this.activeAnnotation);
+    }
 
     /**
      * The entry point to this dialog from the main application
@@ -237,7 +248,10 @@ public class AnalysisDialogController {
         if (data == null || data.length < 2) return;
 
         // -----------------------  load annotation ------------------------
-        activeAnnotation = newAnnot;
+        // save a copy of the annotation (potentially updated to be returned)
+        activeAnnotation = new SigMfAnnotation();
+        activeAnnotation.copy(newAnnot);
+
         txtAnnotLabel.setText(newAnnot.getLabel());
         txtAnnotComment.setText(newAnnot.getComment());
         txtAnnotTime.setText(
@@ -388,7 +402,7 @@ public class AnalysisDialogController {
      * Calculate and display metrics selected by user
      */
     private void updatePsdMetrics() {
-        XYPlot plot = viewPSD.getChart().getXYPlot();
+        // XYPlot plot = viewPSD.getChart().getXYPlot();
 
         // Retrieve values from markers (assuming you stored them as member variables)
         double snr = currentPassbandLevel - currentNoiseFloor;
@@ -397,7 +411,7 @@ public class AnalysisDialogController {
 
         String metrics = String.format(
             "Center: %.6f MHz | BW: %.6f MHz | SNR: %.1f dB",
-            centerFreq/1e6, bandwidth/1e6, snr
+            centerFreq / 1e6, bandwidth / 1e6, snr
         );
 
         // Update the chart subtitle
@@ -453,7 +467,7 @@ public class AnalysisDialogController {
             // NOTE: Add metrics to the comments section of the annotation
             double snr = currentPassbandLevel - currentNoiseFloor;
             String metrics = String.format(
-                "\nSNR: %.2f dB\nNoise: %.2f dB\nPower: %.2f dB",
+                "%nSNR: %.2f dB%nNoise: %.2f dB%nPower: %.2f dB",
                 snr, currentNoiseFloor, currentPassbandLevel);
             finalComment += metrics;
         }

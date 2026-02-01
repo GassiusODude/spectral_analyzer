@@ -34,21 +34,16 @@ public class ExtractDownConvertService {
             MappedByteBuffer buffer, long startSample,
             int count, String datatype, double freqOff, int down,
             boolean fast) {
-
         logger.info("Extracting {} samples, Down-converting by factor: {}", count, down);
-
-        // 1. Determine bytes per IQ pair
         int bytesPerIQ = datatype.startsWith("ci16") ? 4 : 8;
         long startByte = startSample * bytesPerIQ;
 
-        // load time signal
-        int outputSize = (int) Math.floor(count / down);
+        // -----------------------  load time signal  -------------------------
         double[] inReal = new double[count];
         double[] inImag = new double[count];
 
         for (int ind = 0; ind < count; ind++) {
             // Map the new index back to the original buffer index
-
             long byteOffset = startByte + (ind * bytesPerIQ);
 
             double real, imag;
@@ -63,6 +58,7 @@ public class ExtractDownConvertService {
             inImag[ind] = imag;
         }
 
+        // ----------------------  perform converter  -------------------------
         double[][] result;
         if (fast) {
             // uses a polyphase downconverter with a moving average filter prior to decimation

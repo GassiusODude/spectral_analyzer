@@ -32,6 +32,7 @@ import javafx.scene.layout.HBox;    // For the timeAxis container
 import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 import javafx.scene.shape.Rectangle;
+import javafx.scene.text.Font;
 import javafx.scene.paint.Color;
 import javafx.scene.Parent;
 import javafx.scene.Scene;
@@ -43,6 +44,7 @@ import javafx.util.Duration;
 
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.Comparator;
@@ -57,6 +59,8 @@ import org.springframework.stereotype.Component;
 import org.apache.commons.math3.complex.Complex;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import net.kcundercover.spectral_analyzer.sigmf.SigMfHelper;
 import net.kcundercover.spectral_analyzer.sigmf.SigMfMetadata;
@@ -75,6 +79,7 @@ public class MainController {
 
     // track the input file path
     private Path input_file;
+    private long totalSamples;
 
     /**
      * Custom style for annotation based on label
@@ -400,7 +405,7 @@ public class MainController {
                 var meta = sigMfHelper.getMetadata();
                 int bytesPerSample = meta.global().getBytesPerSample();
                 long totalBytes = sigMfHelper.getDataBuffer().capacity();
-                long totalSamples = totalBytes / bytesPerSample;
+                totalSamples = totalBytes / bytesPerSample;
 
                 fileScrollBar.setMin(0);
                 fileScrollBar.setMax(totalSamples - (spectrogramCanvas.getHeight() * 1024));
@@ -467,8 +472,29 @@ public class MainController {
 
         double inputFs = sigMfHelper.getMetadata().global().sampleRate();
         double inputFc = sigMfHelper.getMetadata().captures().get(0).frequency();
-        double currBw = selectionFreqHigh - selectionFreqLow;
+
+        // =======================================================
+        // NOTE: Send a little exta bw and time for PSD analysis
+        // =======================================================
+        // NOTE: extend the bandwidth by 20 % (allow for improved analysis)
+        double currBw = (selectionFreqHigh - selectionFreqLow) * 1.2;
         double center = (selectionFreqHigh + selectionFreqLow) / 2.0 - inputFc;
+
+        // NOTE: extend time by
+        long targetStart;
+        if (selectionStartSample - (long) (selectionStartWidthSamples*0.1) < 0) {
+            targetStart = 0L;
+        } else {
+            targetStart = selectionStartSample - (long) (selectionStartWidthSamples*0.1);
+        }
+
+        long targetWidth;
+        if (selectionStartSample + selectionStartWidthSamples * 1.1 > totalSamples) {
+            // end of file, get as
+            targetWidth = totalSamples - targetStart;
+        } else {
+            targetWidth = (long) (selectionStartWidthSamples * 1.1) + (selectionStartSample - targetStart);
+        }
 
         int down = (int) Math.ceil(inputFs/currBw);
 
@@ -482,8 +508,8 @@ public class MainController {
         // NOTE: Runs downconverter to supply analysis dialog
         CompletableFuture.supplyAsync(() -> downConvertService.extractAndDownConvert(
                 sigMfHelper.getDataBuffer(),
-                selectionStartSample,
-                (int) selectionStartWidthSamples,
+                targetStart,
+                (int) targetWidth,
                 dataType,
                 center / inputFs,
                 down,
@@ -527,6 +553,8 @@ public class MainController {
 
             // Update annotation display
             // ------------------------------------------------------
+            selectionAnnotation.copy(controller.getUpdatedAnnotation());
+
             // NOTE: potential updates to labels/comments and frequency bounds)
             updateAnnotationDisplay();
 
@@ -621,7 +649,7 @@ public class MainController {
 
         // Get pixel width
         int canvasW = (int) spectrogramCanvas.getWidth();
-        int canvasH = (int) spectrogramCanvas.getHeight();
+        // int canvasH = (int) spectrogramCanvas.getHeight();
         if (canvasW <= 0) return; // Wait for layout
 
 
@@ -723,7 +751,7 @@ public class MainController {
         label.setMouseTransparent(true); // So the label doesn't block clicking the box
 
         // set up the tool tip
-        String tooltipText = String.format("Label: %s\nComment: %s",
+        String tooltipText = String.format("Label: %s%nComment: %s",
                             cAnnot.getLabel() != null ? cAnnot.getLabel() : "N/A",
                             cAnnot.getComment() != null ? cAnnot.getComment() : "No comment");
 
@@ -975,4 +1003,36 @@ public class MainController {
             logger.error("Failed to open styles dialog", e);
         }
     }
+
+    /**
+     * Show credits to third-party libraries
+     */
+    @FXML
+    private void handleShowCredits() {
+        try (InputStream is = getClass().getResourceAsStream(
+        "/net/kcundercover/spectral_analyzer/ThirdPartyNotices.txt")) {
+
+        // try {
+        //     // Read the file from resources
+        //     InputStream is = getClass().getResourceAsStream("/net/kcundercover/spectral_analyzer/ThirdPartyNotices.txt");
+            String content = new String(is.readAllBytes(), StandardCharsets.UTF_8);
+
+            // Display in a scrollable text area
+            TextArea textArea = new TextArea(content);
+            textArea.setEditable(false);
+            textArea.setFont(Font.font("Consolas", 12));
+            textArea.setWrapText(true);
+
+            Alert alert = new Alert(Alert.AlertType.INFORMATION);
+            alert.setTitle("Third-Party Notices");
+            alert.setHeaderText("Legal & Attribution Information");
+            alert.getDialogPane().setContent(textArea);
+            alert.setResizable(true);
+            alert.showAndWait();
+
+        } catch (Exception e) {
+            logger.error("Could not load credits file", e);
+        }
+    }
+
 }
