@@ -87,21 +87,27 @@ configurations {
 	}
 }
 
+
+// ============================================================================
+// 					Specify dependencies and repositories
+// ============================================================================
 repositories {
 	// Use local maven repo if available (for JDSP dependency)
 	mavenLocal()
 
 	// If no local, then pull from repo (Github CI)
-    maven {
-        url 'https://maven.pkg.github.com/GassiusODude/jdsp'
-        credentials {
-            username = project.findProperty("gpr.user") ?: System.getenv("USERNAME")
-            password = project.findProperty("gpr.token") ?: System.getenv("TOKEN")
-        }
-    }
-
+    // maven {
+    //     url 'https://maven.pkg.github.com/GassiusODude/jdsp'
+    //     credentials {
+    //         username = project.findProperty("gpr.user") ?: System.getenv("USERNAME")
+    //         password = project.findProperty("gpr.token") ?: System.getenv("TOKEN")
+    //     }
+    // }
 
     mavenCentral()
+
+	// Jitpack.io
+	maven { url 'https://jitpack.io'}
 }
 
 dependencies {
@@ -113,7 +119,8 @@ dependencies {
     implementation 'org.jfree:org.jfree.chart.fx:2.0.1'
 
 	// JDSP (resampling, PSD)
-	implementation 'net.kcundercover:jdsp:1.2'
+	// implementation 'net.kcundercover:jdsp:1.3'
+	implementation 'com.github.GassiusODude:jdsp:v1.3'		// pulling with jitpack.io
 
 	// Jackson (JSON support to read SigMF Meta)
 	implementation 'com.fasterxml.jackson.core:jackson-databind'
