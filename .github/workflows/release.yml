@@ -2,9 +2,11 @@ name: Release and Publish
 
 on:
   push:
-    branches: [ master ] # Validates code on every master push
+    branches:
+      - '**'
     tags:
       - 'v*' # Full release process on tags like v1.1 or v1.0.2
+  workflow_dispatch: # Highly recommended: adds a manual "Run" button in GitHu
 
 jobs:
   build-and-release:
