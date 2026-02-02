@@ -1,14 +1,12 @@
 package net.kcundercover.spectral_analyzer;
 
 
-import javafx.event.ActionEvent;
+
 import javafx.fxml.FXML;
 import javafx.scene.control.Button;
 import javafx.scene.control.ColorPicker;
 import javafx.scene.control.TextField;
-import javafx.scene.Node;
 import javafx.scene.paint.Color;
-import javafx.stage.Stage;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import javafx.stage.FileChooser;
@@ -21,7 +19,6 @@ import java.util.Map;
 import javafx.scene.control.TableView;
 import javafx.scene.control.TableColumn;
 import javafx.scene.control.TableCell;
-import javafx.scene.shape.Rectangle;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -34,7 +31,7 @@ import net.kcundercover.spectral_analyzer.AnnotationStyle;
 
 @Component
 public class AnnotationStyleDialogController {
-    private static final Logger log = LoggerFactory.getLogger(AnnotationStyleDialogController.class);
+    private static final Logger ASDC_LOGGER = LoggerFactory.getLogger(AnnotationStyleDialogController.class);
     @FXML private TableView<AnnotationStyle> table;
     @FXML private TableColumn<AnnotationStyle, String> keyCol;
     @FXML private TableColumn<AnnotationStyle, Color> colorCol;
@@ -164,10 +161,12 @@ public class AnnotationStyleDialogController {
 
     @FXML
     private void handleAddStyle() {
-        log.debug("Adding new style for label: {}", labelField.getText());
+        ASDC_LOGGER.debug("Adding new style for label: {}", labelField.getText());
         // Logic to add labelField.getText() and colorPicker.getValue() to the TableView
         String label = labelField.getText().trim();
-        if (label.isEmpty()) return;
+        if (label.isEmpty()) {
+            return;
+        }
 
         AnnotationStyle newStyle = new AnnotationStyle(label, colorPicker.getValue());
 
@@ -175,7 +174,7 @@ public class AnnotationStyleDialogController {
         styleList.removeIf(s -> s.label().equalsIgnoreCase(label));
         styleList.add(newStyle);
 
-        log.debug("Style list updated. Current count: {}", styleList.size());
+        ASDC_LOGGER.debug("Style list updated. Current count: {}", styleList.size());
     }
 
     @FXML
@@ -187,7 +186,7 @@ public class AnnotationStyleDialogController {
             // 2. Remove from the ObservableList
             styleList.remove(selectedStyle);
 
-            log.debug("Removed style for: {}", selectedStyle.label());
+            ASDC_LOGGER.debug("Removed style for: {}", selectedStyle.label());
 
             // Optional: Clear the input fields if they match the deleted item
             if (labelField.getText().equals(selectedStyle.label())) {
@@ -195,7 +194,7 @@ public class AnnotationStyleDialogController {
             }
         } else {
             // 3. Optional: Alert the user if nothing is selected
-            log.warn("Remove clicked, but no style was selected in the table.");
+            ASDC_LOGGER.warn("Remove clicked, but no style was selected in the table.");
         }
     }
 
@@ -208,7 +207,9 @@ public class AnnotationStyleDialogController {
         );
 
         File file = fc.showOpenDialog(table.getScene().getWindow());
-        if (file == null) return;
+        if (file == null) {
+            return;
+        }
 
         try {
             ObjectMapper mapper = new ObjectMapper();
@@ -241,7 +242,9 @@ public class AnnotationStyleDialogController {
         );
 
         File file = fc.showSaveDialog(table.getScene().getWindow());
-        if (file == null) return;
+        if (file == null) {
+            return;
+        }
 
         try {
             ObjectMapper mapper = new ObjectMapper();

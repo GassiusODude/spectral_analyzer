@@ -1,6 +1,5 @@
 package net.kcundercover.spectral_analyzer;
 
-import org.apache.commons.math3.complex.Complex;
 import org.springframework.stereotype.Service;
 import java.nio.MappedByteBuffer;
 import org.slf4j.Logger;
@@ -16,7 +15,7 @@ import net.kcundercover.jdsp.signal.Resampler;
  */
 @Service
 public class ExtractDownConvertService {
-    private static final Logger logger = LoggerFactory.getLogger(ExtractDownConvertService.class);
+    private static final Logger EDCS_LOGGER = LoggerFactory.getLogger(ExtractDownConvertService.class);
 
     public double[][] extractAndDownConvert(
             MappedByteBuffer buffer, long startSample,
@@ -34,7 +33,7 @@ public class ExtractDownConvertService {
             MappedByteBuffer buffer, long startSample,
             int count, String datatype, double freqOff, int down,
             boolean fast) {
-        logger.info("Extracting {} samples, Down-converting by factor: {}", count, down);
+        EDCS_LOGGER.info("Extracting {} samples, Down-converting by factor: {}", count, down);
         int bytesPerIQ = datatype.startsWith("ci16") ? 4 : 8;
         long startByte = startSample * bytesPerIQ;
 
@@ -63,13 +62,13 @@ public class ExtractDownConvertService {
         if (fast) {
             // uses a polyphase downconverter with a moving average filter prior to decimation
             result = Resampler.downConvertPolyphase(inReal, inImag, freqOff, 1.0, down);
-            logger.info("Downconverter (fast) completed!!");
+            EDCS_LOGGER.info("Downconverter (fast) completed!!");
         } else {
             // downconvert (LPF - downconvert)
             // NOTE: this has better stopband attenuation but is slower.
             Resampler resampler = new Resampler(1, down); // just use 1 (for up factor)
             result = resampler.downConvert(inReal, inImag, freqOff, 1.0);
-            logger.info("Downconverter (conventional) completed!!");
+            EDCS_LOGGER.info("Downconverter (conventional) completed!!");
         }
 
         return result;

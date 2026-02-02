@@ -33,8 +33,11 @@ public record Global(
      * Calculates bytes per I/Q pair based on SigMF convention
      */
     public int getBytesPerSample() {
-        if (datatype.startsWith("cf32")) return 8; // 4 bytes I + 4 bytes Q
-        if (datatype.startsWith("ci16")) return 4; // 2 bytes I + 2 bytes Q
+        if (datatype.startsWith("cf32")) {
+            return 8; // 4 bytes I + 4 bytes Q
+        } else if (datatype.startsWith("ci16")) {
+            return 4; // 2 bytes I + 2 bytes Q
+        }
         return 8; // Fallback
     }
 }

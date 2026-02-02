@@ -1,34 +1,19 @@
 package net.kcundercover.spectral_analyzer;
 
 import javafx.fxml.FXML;
-import javafx.geometry.Point2D;
-import javafx.geometry.Rectangle2D;
 import javafx.event.ActionEvent;
-import javafx.scene.chart.LineChart;
-import javafx.scene.chart.ScatterChart;
-import javafx.scene.chart.XYChart;
-import javafx.scene.chart.XYChart.Series;
 import javafx.scene.control.Button;
 import javafx.scene.control.CheckBox;
 import javafx.scene.control.TextArea;
 import javafx.scene.control.TextField;
 import javafx.scene.layout.StackPane;
-import javafx.scene.paint.Color;
 import javafx.scene.Node;
 import javafx.stage.Stage;
-
 import org.jfree.chart.fx.interaction.ChartMouseEventFX;
 import org.jfree.chart.fx.interaction.ChartMouseListenerFX;
 import org.jfree.chart.plot.ValueMarker;
-import org.jfree.chart.ui.RectangleEdge;
-
-import java.awt.BasicStroke; // For Marker Lines
-import javafx.geometry.Rectangle2D;
 import javafx.scene.input.MouseEvent; // For the event trigger
-import org.jfree.chart.ui.RectangleEdge; // For getDomainEdge/getRangeEdge
 import org.jfree.chart.title.TextTitle;
-import java.awt.Font;
-import org.apache.commons.math3.complex.Complex;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.jfree.chart.fx.ChartViewer;
@@ -43,7 +28,7 @@ import net.kcundercover.jdsp.signal.PowerSpectralDensity;
 import net.kcundercover.spectral_analyzer.sigmf.SigMfAnnotation;
 
 public class AnalysisDialogController {
-    private static final Logger logger = LoggerFactory.getLogger(AnalysisDialogController.class);
+    private static final Logger ADC_LOGGER = LoggerFactory.getLogger(AnalysisDialogController.class);
 
     /** Active annotation is a copy of the annotation,
      * introduced through setAnalysisData()
@@ -180,12 +165,15 @@ public class AnalysisDialogController {
         double timeStep = 1.0 / sampleRate;
         for (int i = 1; i < data[0].length; i++) {
             double phase1 = Math.atan2(data[1][i], data[0][i]);
-            double phase2 = Math.atan2(data[1][i-1], data[0][i-1]);
+            double phase2 = Math.atan2(data[1][i - 1], data[0][i - 1]);
 
             double dPhase = phase1 - phase2;
             // Wrap phase to [-PI, PI]
-            if (dPhase > Math.PI) dPhase -= 2 * Math.PI;
-            else if (dPhase < -Math.PI) dPhase += 2 * Math.PI;
+            if (dPhase > Math.PI) {
+                dPhase -= 2 * Math.PI;
+            } else if (dPhase < -Math.PI) {
+                dPhase += 2 * Math.PI;
+            }
 
             double instFreq = (dPhase / (2 * Math.PI)) * sampleRate;
             seriesFreq.add(i * timeStep, instFreq, false);
@@ -206,7 +194,7 @@ public class AnalysisDialogController {
         int psdNfft = 8192;
         double[][] freqAndPsd;
         if (data[0].length < psdNfft) {
-            logger.warn("Short signal in PSD, single window analysis, and different NFFT");
+            ADC_LOGGER.warn("Short signal in PSD, single window analysis, and different NFFT");
             freqAndPsd = PowerSpectralDensity.calculatePsdWelch(
                 data, sampleRate, data[0].length);
         } else {
@@ -217,7 +205,7 @@ public class AnalysisDialogController {
         // get the true center from the provided annotation
         double trueCenterFreq = 0.5 * (activeAnnotation.getFreqLowerEdge() + activeAnnotation.getFreqUpperEdge());
 
-        for (int ind=0; ind < freqAndPsd[0].length; ind++) {
+        for (int ind = 0; ind < freqAndPsd[0].length; ind++) {
             seriesPSD.add(
                 freqAndPsd[0][ind] + trueCenterFreq,
                 freqAndPsd[1][ind], false);
@@ -245,7 +233,9 @@ public class AnalysisDialogController {
      * @param newAnnot The current SigMFAnnotation
      */
     public void setAnalysisData(double[][] data, double sampleRate, double origSampleRate, SigMfAnnotation newAnnot) {
-        if (data == null || data.length < 2) return;
+        if (data == null || data.length < 2) {
+            return;
+        }
 
         // -----------------------  load annotation ------------------------
         // save a copy of the annotation (potentially updated to be returned)
@@ -272,7 +262,7 @@ public class AnalysisDialogController {
         updateFrequencyChart(data, sampleRate);
         updatePSDChart(data, sampleRate);
 
-        logger.info("Analysis Dialog updated for {} samples.", data[0].length);
+        ADC_LOGGER.info("Analysis Dialog updated for {} samples.", data[0].length);
     }
 
     /**
@@ -291,7 +281,7 @@ public class AnalysisDialogController {
             seriesFreq.clear();
         }
 
-        logger.info("Data released from AnalysisDialog");
+        ADC_LOGGER.info("Data released from AnalysisDialog");
 
     }
 
@@ -445,7 +435,7 @@ public class AnalysisDialogController {
             txtAnnotFreq.setText(
                 String.format("Updated Frequency from %.3f MHz to %.3f MHz",
                     lowCutoff / 1e6, highCutoff / 1e6));
-            logger.info("Annotation frequencies updated from PSD markers.");
+            ADC_LOGGER.info("Annotation frequencies updated from PSD markers.");
         }
     }
 
@@ -456,7 +446,9 @@ public class AnalysisDialogController {
      */
     @FXML
     private void handleUpdate(ActionEvent event) {
-        if (activeAnnotation == null) return;
+        if (activeAnnotation == null) {
+            return;
+        }
 
         // update label
         activeAnnotation.setLabel(txtAnnotLabel.getText());
@@ -477,6 +469,6 @@ public class AnalysisDialogController {
 
 
         // Trigger your app's SigMF save logic here
-        logger.info("Annotation updated and metrics appended.");
+        ADC_LOGGER.info("Annotation updated and metrics appended.");
     }
 }

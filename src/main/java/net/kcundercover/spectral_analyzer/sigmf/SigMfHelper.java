@@ -7,14 +7,12 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import java.io.File;
 import java.io.IOException;
 import java.io.RandomAccessFile;
-import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
-import java.util.stream.Collectors;
 
 import org.apache.logging.log4j.internal.annotation.SuppressFBWarnings;
 import org.slf4j.Logger;
@@ -24,7 +22,7 @@ import net.kcundercover.spectral_analyzer.sigmf.SigMfAnnotation;
  * SigMF Helper object
  */
 public class SigMfHelper {
-    private static final Logger logger = LoggerFactory.getLogger(SigMfHelper.class);
+    private static final Logger SMH_LOGGER = LoggerFactory.getLogger(SigMfHelper.class);
     private final ObjectMapper mapper = new ObjectMapper()
         // This prevents the UnrecognizedPropertyException
         .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
@@ -63,7 +61,9 @@ public class SigMfHelper {
     }
 
     public File getCurrentMetaFile() {
-        if (inputMeta == null) return null;
+        if (inputMeta == null) {
+            return null;
+        }
 
         File file = inputMeta.toFile();
         if (file.getName().endsWith(".sigmf-data")) {
@@ -79,6 +79,7 @@ public class SigMfHelper {
     public SigMfMetadata getMetadata() {
         return metadata;
     }
+
     @SuppressFBWarnings(
         value = "EI_EXPOSE_REP",
         justification = "Intentional: buffer is shared for performance")
@@ -86,9 +87,6 @@ public class SigMfHelper {
         return dataBuffer;
     }
 
-    // public ByteBuffer getDataBuffer() {
-    //     return dataBuffer.asReadOnlyBuffer(); // ✅
-    // }
     /**
      * Get the annotations list and return the List of SigMfAnnotations
      * @return List of SigMF Annotation objects
@@ -116,9 +114,9 @@ public class SigMfHelper {
             );
 
             mapper.writeValue(getCurrentMetaFile(), this.metadata);
-            logger.info("SigMF metadata saved successfully.");
+            SMH_LOGGER.info("SigMF metadata saved successfully.");
         } catch (IOException e) {
-            logger.error("Failed to save SigMF file", e);
+            SMH_LOGGER.error("Failed to save SigMF file", e);
         }
     }
 

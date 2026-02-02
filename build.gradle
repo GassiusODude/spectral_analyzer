@@ -23,30 +23,63 @@ javafx {
     modules = [ 'javafx.controls', 'javafx.fxml' ]
 }
 
-shadowJar {
+// ============================================================================
+// 									bootJar
+// ============================================================================
+// NOTE: Set up bootJar to support the Spring boot JavaFX application
+bootJar {
+    archiveClassifier = 'boot' // Distinguishes it from the plain jar
     manifest {
         attributes(
             "Implementation-Title": "Spectral Analyzer",
-            "Implementation-Version": project.version, // Essential for Python verification
+            "Implementation-Version": project.version,
             "Build-Timestamp": new java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSZ").format(new Date())
         )
     }
 
-    // handle licenses
+    // Include your licenses in the BOOT-INF/classes/META-INF folder
     from("${project.rootDir}") {
         include "LICENSE"
+
+		// EJML, Apache Common Math, Jackson, Spring Framwork/Boot
         include "APACHE_LICENSE-2.0.txt"
-        include "EJML_LICENSE-2.0.txt"
+
+		// JFreeChart and JFreeChart-FX
 		include "JFREECHART_LICENSE-LGPL.txt"
+
+        include "JFREECHART_LICENSE-LGPL.txt"
         into "META-INF"
     }
-
-    // prevent overwriting multiple license and notice files
-    append 'META-INF/LICENSE'
-    append 'META-INF/NOTICE'
-
-    mergeServiceFiles()
 }
+
+// shadowJar {
+//     manifest {
+//         attributes(
+//             "Implementation-Title": "Spectral Analyzer",
+//             "Implementation-Version": project.version, // Essential for Python verification
+//             "Build-Timestamp": new java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSZ").format(new Date())
+//         )
+//     }
+
+//     // handle licenses
+//     from("${project.rootDir}") {
+//         include "LICENSE"
+
+// 		// EJML, Apache Common Math, Jackson, Spring Framwork/Boot
+//         include "APACHE_LICENSE-2.0.txt"
+
+// 		// JFreeChart and JFreeChart-FX
+// 		include "JFREECHART_LICENSE-LGPL.txt"
+
+//         into "META-INF"
+//     }
+
+//     // prevent overwriting multiple license and notice files
+//     append 'META-INF/LICENSE'
+//     append 'META-INF/NOTICE'
+
+//     mergeServiceFiles()
+// }
 
 configurations {
 	compileOnly {
@@ -67,6 +100,7 @@ repositories {
         }
     }
 
+
     mavenCentral()
 }
 
@@ -74,12 +108,11 @@ dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter-webmvc'
 	implementation 'net.rgielen:javafx-weaver-spring-boot-starter:2.0.1'
 
-	// Core charting engine
+	// Fast plotting library
     implementation 'org.jfree:jfreechart:1.5.4'
-    // JavaFX specific viewer and components
     implementation 'org.jfree:org.jfree.chart.fx:2.0.1'
 
-	// JDSP
+	// JDSP (resampling, PSD)
 	implementation 'net.kcundercover:jdsp:1.2'
 
 	// Jackson (JSON support to read SigMF Meta)
@@ -96,7 +129,6 @@ dependencies {
 }
 
 
-
 application {
     mainClass = 'net.kcundercover.spectral_analyzer.MainApp'
 }
@@ -104,8 +136,12 @@ application {
 // Optional: Configure them to show HTML reports
 checkstyle {
     toolVersion = "10.12.5"
-    ignoreFailures = true
+    ignoreFailures = false
 	showViolations = true
+	configProperties = [
+        'org.checkstyle.google.severity': 'warning',
+        'org.checkstyle.google.suppressionfilter.config': "${project.rootDir}/config/checkstyle/checkstyle-suppressions.xml"
+    ]
 }
 
 spotbugs {

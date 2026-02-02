@@ -25,12 +25,10 @@ import javafx.scene.control.ScrollBar;
 import javafx.scene.Cursor;
 import javafx.scene.image.PixelWriter;      // for fast drawing
 import javafx.scene.input.MouseButton;
-import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.Pane;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.HBox;    // For the timeAxis container
 import javafx.scene.layout.Region;
-import javafx.scene.layout.VBox;
 import javafx.scene.shape.Rectangle;
 import javafx.scene.text.Font;
 import javafx.scene.paint.Color;
@@ -40,8 +38,6 @@ import javafx.stage.FileChooser;
 import javafx.stage.Modality;
 import javafx.stage.Stage;
 import javafx.stage.Window;
-import javafx.util.Duration;
-
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
@@ -51,34 +47,30 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
-
 import net.rgielen.fxweaver.core.FxmlView;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
-import org.apache.commons.math3.complex.Complex;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import net.kcundercover.spectral_analyzer.sigmf.SigMfHelper;
-import net.kcundercover.spectral_analyzer.sigmf.SigMfMetadata;
+
 import net.kcundercover.spectral_analyzer.sigmf.SigMfAnnotation;
 @Component
 @FxmlView("main-scene.fxml")
 public class MainController {
-    private static final Logger logger = LoggerFactory.getLogger(MainController.class);
+    private static final Logger MC_LOGGER = LoggerFactory.getLogger(MainController.class);
 
     // throttle updates
     private final AtomicBoolean redrawPending = new AtomicBoolean(false);
 
     private SigMfHelper sigMfHelper = new SigMfHelper();
     private long currentSampleOffset = 0; // Where we are in the file
-    private int fft_size;
+    private int fftSize;
 
     // track the input file path
-    private Path input_file;
+    private Path inputFile;
     private long totalSamples;
 
     /**
@@ -165,7 +157,7 @@ public class MainController {
 
             // remove visuals linked to the annotationOverlay panel
             annotationOverlay.getChildren().removeAll(group.rect, group.label);
-            logger.info("Annotation and Tooltip removed for: {}", group.data.getLabel());
+            MC_LOGGER.info("Annotation and Tooltip removed for: {}", group.data.getLabel());
         }
     }
 
@@ -238,14 +230,14 @@ public class MainController {
         plotContainer.heightProperty().addListener(resizeListener);
 
         // initialize fft by nfftSlider
-        fft_size = (int) Math.pow(2, (int) nfftSlider.getValue());
+        fftSize = (int) Math.pow(2, (int) nfftSlider.getValue());
         nfftSlider.valueProperty().addListener((obs, oldVal, newVal) -> {
             // Enforce integer steps and calculate power of 2
             int exponent = newVal.intValue();
-            fft_size = (int) Math.pow(2, exponent);
+            fftSize = (int) Math.pow(2, exponent);
 
             // Update UI
-            lblNfftValue.setText(String.valueOf(fft_size));
+            lblNfftValue.setText(String.valueOf(fftSize));
 
             // Trigger re-processing
             updateDisplay();
@@ -327,8 +319,8 @@ public class MainController {
 
                 // track the selection information
                 // --------------------------------------------------
-                this.selectionStartSample = currentSampleOffset + (long)((selectionRect.getX() / canvasW) * (canvasW * fft_size));
-                this.selectionStartWidthSamples = (selectionRect.getWidth() / canvasW) * (canvasW * fft_size);
+                this.selectionStartSample = currentSampleOffset + (long)((selectionRect.getX() / canvasW) * (canvasW * fftSize));
+                this.selectionStartWidthSamples = (selectionRect.getWidth() / canvasW) * (canvasW * fftSize);
                 selectionFreqHigh = centerFreq + sampleRate / 2 - (selectionRect.getY() / canvasH) * sampleRate;
                 selectionFreqLow = selectionFreqHigh - (selectionRect.getHeight() / canvasH * sampleRate);
                 selectionComplete = true;
@@ -336,7 +328,7 @@ public class MainController {
                 // set the characteristics of the selection
                 // --------------------------------------------------
                 selectionRect.setStroke(selectColorPicker.getValue());
-                selectionRect.setFill(selectColorPicker.getValue().deriveColor(0,1,1,0.3));
+                selectionRect.setFill(selectColorPicker.getValue().deriveColor(0, 1, 1, 0.3));
                 selectionRect.setStrokeWidth(2);
 
                 // update UI to display selection
@@ -379,7 +371,7 @@ public class MainController {
 
         if (selectedFile != null) {
 
-            logger.info("Selected file: {}", selectedFile.getAbsolutePath());
+            MC_LOGGER.info("Selected file: {}", selectedFile.getAbsolutePath());
 
             // Add logic here to pass the file to your JDSP processing service
             try {
@@ -392,7 +384,7 @@ public class MainController {
                 annotationMap.clear();
 
                 // track the input meta file
-                input_file = selectedFile.toPath();
+                inputFile = selectedFile.toPath();
 
                 // load annotations
                 List<SigMfAnnotation> fileAnnotations = sigMfHelper.getParsedAnnotations();
@@ -411,7 +403,7 @@ public class MainController {
                 fileScrollBar.setMax(totalSamples - (spectrogramCanvas.getHeight() * 1024));
                 fileScrollBar.setValue(0);
 
-                logger.info(
+                MC_LOGGER.info(
                     "\n\t------- SigMF Loaded -------" +
                     "\n\tTotal bytes = {} bytes" +
                     "\n\tTotal Samples = {} samples" +
@@ -427,7 +419,7 @@ public class MainController {
 
                     fileScrollBar.setMin(0);
                     // Ensure we don't calculate a negative Max
-                    fileScrollBar.setMax(Math.max(0, totalSamples - (long)(canvasW * fft_size)));
+                    fileScrollBar.setMax(Math.max(0, totalSamples - (long)(canvasW * fftSize)));
                     fileScrollBar.setValue(0);
                     fileScrollBar.setBlockIncrement(canvasW);
                     updateDisplay();
@@ -452,7 +444,7 @@ public class MainController {
             .toList();
 
         sigMfHelper.saveSigMF(sortedAnnotations);
-        logger.info("SigMF saved: {} annotations written in chronological order.", sortedAnnotations.size());
+        MC_LOGGER.info("SigMF saved: {} annotations written in chronological order.", sortedAnnotations.size());
     }
 
     /**
@@ -482,10 +474,10 @@ public class MainController {
 
         // NOTE: extend time by
         long targetStart;
-        if (selectionStartSample - (long) (selectionStartWidthSamples*0.1) < 0) {
+        if (selectionStartSample - (long) (selectionStartWidthSamples * 0.1) < 0) {
             targetStart = 0L;
         } else {
-            targetStart = selectionStartSample - (long) (selectionStartWidthSamples*0.1);
+            targetStart = selectionStartSample - (long) (selectionStartWidthSamples * 0.1);
         }
 
         long targetWidth;
@@ -496,7 +488,7 @@ public class MainController {
             targetWidth = (long) (selectionStartWidthSamples * 1.1) + (selectionStartSample - targetStart);
         }
 
-        int down = (int) Math.ceil(inputFs/currBw);
+        int down = (int) Math.ceil(inputFs / currBw);
 
         double targetFs = inputFs / down;
 
@@ -559,7 +551,7 @@ public class MainController {
             updateAnnotationDisplay();
 
         } catch (IOException e) {
-            logger.error("Failed to open Analysis Dialog", e);
+            MC_LOGGER.error("Failed to open Analysis Dialog", e);
         }
     }
 
@@ -636,8 +628,12 @@ public class MainController {
         normalized = Math.clamp(normalized, 0.0, 1.0); // Java 21+ clamp
 
         // Simple "Heat" map: Black -> Blue -> Red -> Yellow
-        if (normalized < 0.2) return Color.BLACK;
-        if (normalized < 0.5) return Color.BLUE.interpolate(Color.RED, (normalized - 0.2) / 0.3);
+        if (normalized < 0.2) {
+            return Color.BLACK;
+        }
+        if (normalized < 0.5) {
+            return Color.BLUE.interpolate(Color.RED, (normalized - 0.2) / 0.3);
+        }
         return Color.RED.interpolate(Color.YELLOW, (normalized - 0.5) / 0.5);
     }
 
@@ -645,13 +641,16 @@ public class MainController {
      * Core update method to redraw GUI
      */
     public void updateDisplay() {
-        if (sigMfHelper.getDataBuffer() == null) return;
+        if (sigMfHelper.getDataBuffer() == null) {
+            return;
+        }
 
         // Get pixel width
         int canvasW = (int) spectrogramCanvas.getWidth();
         // int canvasH = (int) spectrogramCanvas.getHeight();
-        if (canvasW <= 0) return; // Wait for layout
-
+        if (canvasW <= 0) {
+            return; // Wait for layout
+        }
 
         var global = sigMfHelper.getMetadata().global();
         String dataType = global.datatype();
@@ -659,23 +658,23 @@ public class MainController {
         double sampleRate = global.sampleRate();
 
         // waterfall[Time][Frequency]
-        double[][] waterfall = new double[canvasW][fft_size];
+        double[][] waterfall = new double[canvasW][fftSize];
 
         for (int t = 0; t < canvasW; t++) {
             // t * fftSize determines how many samples per horizontal pixel
-            long sampleIndex = currentSampleOffset + ((long) t * fft_size);
+            long sampleIndex = currentSampleOffset + ((long) t * fftSize);
             int byteOffset = (int) (sampleIndex * bytesPerSample);
 
-            if (byteOffset + (fft_size * bytesPerSample) <= sigMfHelper.getDataBuffer().capacity()) {
+            if (byteOffset + (fftSize * bytesPerSample) <= sigMfHelper.getDataBuffer().capacity()) {
                 waterfall[t] = spectralService.computeMagnitudes(
                     sigMfHelper.getDataBuffer(),
                     byteOffset,
-                    fft_size,
+                    fftSize,
                     dataType
                 );
             } else {
                 // Fill with a very low dB value so the end of file is black
-                waterfall[t] = new double[fft_size];
+                waterfall[t] = new double[fftSize];
                 java.util.Arrays.fill(waterfall[t], -150.0);
             }
         }
@@ -686,7 +685,7 @@ public class MainController {
         // selection rectangle
         if (selectionRect != null) {
             double canvasWD = spectrogramCanvas.getWidth();
-            long samplesInView = (long)canvasW * fft_size;
+            long samplesInView = (long)canvasW * fftSize;
 
             // Calculate new X based on current scroll offset
             double newX = ((double)(selectionStartSample - currentSampleOffset) / samplesInView) * canvasWD;
@@ -709,7 +708,7 @@ public class MainController {
         // Add 5 time markers across the width
         for (int i = 0; i <= 4; i++) {
             int xPixel = (canvasW / 4) * i;
-            long sampleAtPixel = currentSampleOffset + ((long) xPixel * fft_size);
+            long sampleAtPixel = currentSampleOffset + ((long) xPixel * fftSize);
             double seconds = (double) sampleAtPixel / sampleRate;
 
             Label timeLabel = new Label(String.format(" %.3fs", seconds));
@@ -805,9 +804,9 @@ public class MainController {
                 selectionDescField.setText(cAnnot.getComment());
                 selectionComplete = true;
                 lblFreqLow.setText(
-                    String.format("%.6f MHz", cAnnot.getFreqLowerEdge()/1e6));
+                    String.format("%.6f MHz", cAnnot.getFreqLowerEdge() / 1e6));
                 lblFreqHigh.setText(
-                    String.format("%.6f MHz", cAnnot.getFreqUpperEdge()/1e6));
+                    String.format("%.6f MHz", cAnnot.getFreqUpperEdge() / 1e6));
                 lblSelectionStart.setText(String.format("%d samples", cAnnot.getSampleStart()));
                 lblSelectionDur.setText(String.format("%d samples", cAnnot.getSampleCount()));
             }
@@ -834,14 +833,14 @@ public class MainController {
 
             // Calculate Horizontal (Time) Position
             long offsetInSamples = group.data.getSampleStart() - currentSampleOffset;
-            double x = (double) offsetInSamples / fft_size;
-            double width = (double) group.data.getSampleCount() / fft_size;
+            double x = (double) offsetInSamples / fftSize;
+            double width = (double) group.data.getSampleCount() / fftSize;
 
             // 2. Calculate Vertical (Frequency) Position
             // Map Frequency back to 0.0-1.0 range of the current capture bandwidth
             double bw = sampleRate;
-            double fLowRel = (group.data.getFreqLowerEdge() - (centerFreq - bw/2)) / bw;
-            double fHighRel = (group.data.getFreqUpperEdge() - (centerFreq - bw/2)) / bw;
+            double fLowRel = (group.data.getFreqLowerEdge() - (centerFreq - bw / 2)) / bw;
+            double fHighRel = (group.data.getFreqUpperEdge() - (centerFreq - bw / 2)) / bw;
 
             // Invert for Canvas (0 is top)
             double y = (1.0 - fHighRel) * canvasH;
@@ -851,10 +850,10 @@ public class MainController {
             if (annotationStyles.containsKey(group.label.getText())) {
                 Color styleColor = annotationStyles.get(group.label.getText());
                 rect.setStroke(styleColor);
-                rect.setFill(styleColor.deriveColor(0,1,1,0.3)); // apply 0.3 alpha to the fill
+                rect.setFill(styleColor.deriveColor(0, 1, 1, 0.3)); // apply 0.3 alpha to the fill
             } else {
                 rect.setStroke(annotationColorPicker.getValue());
-                rect.setFill(annotationColorPicker.getValue().deriveColor(0,1,1,0.3)); // apply 0.3 alpha to the fill
+                rect.setFill(annotationColorPicker.getValue().deriveColor(0, 1, 1, 0.3)); // apply 0.3 alpha to the fill
             }
 
             // update labels and comment
@@ -904,13 +903,13 @@ public class MainController {
 
         int canvasW = (int) spectrogramCanvas.getWidth();
         int canvasH = (int) spectrogramCanvas.getHeight();
-        int fft_size = waterfallData[0].length;
+        int fftSize = waterfallData[0].length;
 
         for (int t = 0; t < canvasW; t++) {
             for (int f = 0; f < canvasH; f++) {
                 // Map Canvas Y pixel to FFT Bin
-                // We scale the fft_size down to the canvasH
-                int fftBinIndex = (int) ((double) f / canvasH * fft_size);
+                // We scale the fftSize down to the canvasH
+                int fftBinIndex = (int) ((double) f / canvasH * fftSize);
 
                 double db = waterfallData[t][fftBinIndex];
                 Color color = getColorForMagnitude(db);
@@ -926,7 +925,9 @@ public class MainController {
      */
     private void updateRulers() {
         frequencyRuler.getChildren().clear();
-        if (sigMfHelper.getMetadata() == null) return;
+        if (sigMfHelper.getMetadata() == null) {
+            return;
+        }
 
         var global = sigMfHelper.getMetadata().global();
         var capture = sigMfHelper.getMetadata().captures().get(0);
@@ -1000,7 +1001,7 @@ public class MainController {
             });
 
         } catch (IOException e) {
-            logger.error("Failed to open styles dialog", e);
+            MC_LOGGER.error("Failed to open styles dialog", e);
         }
     }
 
@@ -1031,8 +1032,7 @@ public class MainController {
             alert.showAndWait();
 
         } catch (Exception e) {
-            logger.error("Could not load credits file", e);
+            MC_LOGGER.error("Could not load credits file", e);
         }
     }
-
 }

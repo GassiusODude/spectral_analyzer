@@ -62,18 +62,38 @@ public class SigMfAnnotation {
     }
 
     // Getters
-    public long getSampleStart() { return sampleStart; }
-    public long getSampleCount() { return sampleCount; }
-    public String getLabel() { return label; }
-    public String getComment() { return comment; }
-    public Double getFreqLowerEdge() { return freqLowerEdge; }
-    public Double getFreqUpperEdge() { return freqUpperEdge; }
+    public long getSampleStart() {
+        return sampleStart;
+    }
+    public long getSampleCount() {
+        return sampleCount;
+        }
+    public String getLabel() {
+        return label;
+    }
+    public String getComment() {
+        return comment;
+    }
+    public Double getFreqLowerEdge() {
+        return freqLowerEdge;
+    }
+    public Double getFreqUpperEdge() {
+        return freqUpperEdge;
+    }
 
     // Setters (These fix your compilation errors)
-    public void setLabel(String label) { this.label = label; }
-    public void setComment(String comment) { this.comment = comment; }
-    public void setFreqLowerEdge(Double freq) { this.freqLowerEdge = freq; }
-    public void setFreqUpperEdge(Double freq) { this.freqUpperEdge = freq; }
+    public void setLabel(String label) {
+         this.label = label;
+        }
+    public void setComment(String comment) {
+        this.comment = comment;
+    }
+    public void setFreqLowerEdge(Double freq) {
+        this.freqLowerEdge = freq;
+    }
+    public void setFreqUpperEdge(Double freq) {
+        this.freqUpperEdge = freq;
+    }
 
     // In SigMfAnnotation.java, make sure this exists:
     public long sampleStart() {

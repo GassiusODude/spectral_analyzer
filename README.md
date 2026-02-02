@@ -1,12 +1,8 @@
 # Spectral Analyzer
 
-The Spectral Analyzer is a JavaFX application to load and analyze a SigMF meta/data file.  The main view shows the spectrogram of the input signal along with the annotations list.  Custom color mappings can be applied to unique annotation labels.
+The Spectral Analyzer is a JavaFX application to load and analyze SigMF datasets.  The main view shows the spectrogram of the input signal along with the annotations list.  Custom color mappings can be applied to highlight various signals of interest.
 
-The Spectral Analyzer allows the user to select time/frequency blocks and manually add new annotations.  It supports launching an analysis dialog to operate on a downconverted signal to refine the frequency boundaries and get user-aided estimate passband power, noise floor and SNR measurements.
-
-![Screenshotfs](./docs/screenshot.png.png)
-
-This image was generated from a SigMF file.
+The Spectral Analyzer allows the user to select time/frequency blocks and manually add new annotations.  It supports launching an analysis dialog to operate on a downconverted signal to refine the frequency boundaries and get user-aided estimates (passband power, noise floor and SNR measurements).
 
 * External to this project
   * Used an energy detector to isolate the signals
@@ -16,12 +12,16 @@ This image was generated from a SigMF file.
   * I manually added an `Unknown` signal annotation shown in red.
   * I deleted one of the `WiMax Data` annotations and created a modified annotation.  I used the analysis to get the power measurements.  The `comment` part of the annotation is displayed as a tool tip or on the right when I select the annotation.
 
-![Screenshot Analysis Dialog](./docs/screenshot_analysis_dialog.png)
+![Screenshotfs](./docs/screenshot.png.png)
 
-* In the PSD tab
+* The PSB tab of the `Analysis Dialog` is shown below.  This takes user input
   * User selects Passband with standard mouse `Click`.
   * User selects Noise Floor with `Ctrl + Click`.
   * User selects low and high frequency with `Shift + Click`.
+  * `Update frequency` button will apply user selected bandwidth if the frequencies are selected.
+  * If passband and noise floor are selected, and the `Update` button is pressed, the annotation is updated with measurements of the passband and noise floor average power and the estimate SNR.
+
+![Screenshot Analysis Dialog](./docs/screenshot_analysis_dialog.png)
 
 ## Installation
 
