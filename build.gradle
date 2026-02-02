@@ -47,7 +47,6 @@ bootJar {
 		// JFreeChart and JFreeChart-FX
 		include "JFREECHART_LICENSE-LGPL.txt"
 
-        include "JFREECHART_LICENSE-LGPL.txt"
         into "META-INF"
     }
 }

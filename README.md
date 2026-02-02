@@ -25,6 +25,20 @@ The Spectral Analyzer allows the user to select time/frequency blocks and manual
 
 ## Installation
 
+### Install Java
+
+This project is implemented in Java 21.
+
+~~~bash
+  # install JDK 21 (on Ubuntu)
+  sudo apt install openjdk-21-jdk -y
+
+  # verify that it is installed
+  javac --version
+~~~
+
+### Install Project
+
 ~~~bash
     # ===============================================================
     # Test the build
