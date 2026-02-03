@@ -231,6 +231,26 @@ public class AnalysisDialogController {
     }
 
     /**
+     * Formats time values into human-readable units (s, ms, μs).
+     * @param seconds The time value in seconds.
+     * @return Formatted string (e.g., "1.23 s", "45.00 ms", "12.50 μs")
+     */
+    public String formatTime(double seconds) {
+        if (seconds >= 1.0) {
+            return String.format("%.2f s", seconds);
+        } else if (seconds >= 1e-3) {
+            return String.format("%.2f ms", seconds * 1e3);
+        } else if (seconds >= 1e-6) {
+            // Use the UTF-8 Greek mu symbol
+            return String.format("%.2f μs", seconds * 1e6);
+        } else {
+            // Fallback for extremely small values (nanoseconds)
+            return String.format("%.2f ns", seconds * 1e9);
+        }
+    }
+
+
+    /**
      * The entry point to this dialog from the main application
      *
      * @param data Downconverted IQ signal, double[2][N], data[0] is real, data[1] is imaginary
@@ -251,9 +271,9 @@ public class AnalysisDialogController {
         txtAnnotLabel.setText(newAnnot.getLabel());
         txtAnnotComment.setText(newAnnot.getComment());
         txtAnnotTime.setText(
-            String.format("Start at %.3f ms (duration = %.3f ms)",
-                activeAnnotation.getSampleStart() / origSampleRate * 1e3,
-                activeAnnotation.getSampleCount() / origSampleRate * 1e3));
+            String.format("Start at %s (duration = %s)",
+                formatTime(activeAnnotation.getSampleStart() / origSampleRate),
+                formatTime(activeAnnotation.getSampleCount() / origSampleRate)));
         txtAnnotFreq.setText(
             String.format("Frequency from %.3f MHz to %.3f MHz",
                 activeAnnotation.getFreqLowerEdge() / 1e6,

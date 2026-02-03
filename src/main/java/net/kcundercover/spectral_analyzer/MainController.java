@@ -26,6 +26,7 @@ import javafx.scene.control.ScrollBar;
 import javafx.scene.Cursor;
 import javafx.scene.image.PixelWriter;      // for fast drawing
 import javafx.scene.input.MouseButton;
+import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.Pane;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.HBox;    // For the timeAxis container
@@ -73,6 +74,7 @@ public class MainController {
     private double maxDecibel = 0.0;
 
     // track the input file path
+    private File lastOpenedDirectory;
     private Path inputFile;
     private long totalSamples;
 
@@ -192,6 +194,8 @@ public class MainController {
         selectionComplete = false;
 
         // NOTE: reset the UI display
+        selectionNameField.setText("Unknown");
+        selectionDescField.setText("");
         lblSelectionStart.setText("0 seconds");
         lblSelectionDur.setText("0 seconds");
         lblFreqLow.setText("No selection");
@@ -199,9 +203,11 @@ public class MainController {
 
         selectionRect.setHeight(0);
         selectionRect.setWidth(0);
-        selectionRect.setStroke(Color.rgb(255, 255, 255, 1.0));
-        selectionRect.setStrokeWidth(2);
-        selectionRect.setFill(Color.rgb(255, 255, 255, 0.3));
+        selectionRect.setStroke(selectColorPicker.getValue());
+        selectionRect.setStrokeWidth(8);
+        selectionRect.setFill(selectColorPicker.getValue()
+            .deriveColor(0, 1, 1, 0.3));
+
         selectionRect.setVisible(false);
     }
 
@@ -213,6 +219,7 @@ public class MainController {
     public void initialize() {
         annotationColorPicker.setValue(Color.MAGENTA);
         selectColorPicker.setValue(Color.LIME);
+        resetSelection();
 
         // initialize selection rectangle to be hidden
         annotationOverlay.getChildren().add(selectionRect);
@@ -341,10 +348,19 @@ public class MainController {
 
                 // update UI to display selection
                 // --------------------------------------------------
+                double startTime = (double) selectionStartSample / sampleRate;
+                String startUnit = (startTime >= 1.0) ? "s" : "ms";
+                double startValue = (startTime >= 1.0) ? startTime : startTime * 1e3;
+
+                double durTime = (double) selectionStartWidthSamples / sampleRate;
+                String durUnit = (durTime >= 1.0) ? "s" : "ms";
+                double durValue = (durTime >= 1.0) ? durTime : durTime * 1e3;
+
+
                 lblSelectionStart.setText(
-                    String.format("%.3f ms", selectionStartSample / sampleRate * 1e3));
+                    String.format("%.3f %s", startValue, startUnit));
                 lblSelectionDur.setText(
-                    String.format("%.3f ms", selectionStartWidthSamples / sampleRate * 1e3));
+                    String.format("%.3f %s", durValue, durUnit));
                 lblFreqLow.setText(String.format("%.6f MHz", selectionFreqLow / 1e6));
                 lblFreqHigh.setText(String.format("%.6f MHz", selectionFreqHigh / 1e6));
             }
@@ -362,6 +378,10 @@ public class MainController {
     @FXML
     public void handleOpen(ActionEvent event) {
         FileChooser fileChooser = new FileChooser();
+            // Set to last directory if it exists
+        if (lastOpenedDirectory != null && lastOpenedDirectory.exists()) {
+            fileChooser.setInitialDirectory(lastOpenedDirectory);
+        }
         fileChooser.setTitle("Open Signal File");
 
         // Set extension filters (useful for SDR/Audio files)
@@ -378,7 +398,8 @@ public class MainController {
         File selectedFile = fileChooser.showOpenDialog(ownerWindow);
 
         if (selectedFile != null) {
-
+            // track the directory for next time this is called.
+            lastOpenedDirectory = selectedFile.getParentFile();
             MC_LOGGER.info("Selected file: {}", selectedFile.getAbsolutePath());
 
             // Add logic here to pass the file to your JDSP processing service
@@ -399,7 +420,7 @@ public class MainController {
                 List<SigMfAnnotation> fileAnnotations = sigMfHelper.getParsedAnnotations();
                 for (SigMfAnnotation data : fileAnnotations) {
                     // Create the "Visual Proxy"
-                    Rectangle rect = createRectangleForData(data);
+                    createRectangleForData(data);
                 }
 
                 // print information about the meta file
@@ -579,6 +600,7 @@ public class MainController {
             // Update annotation display
             // ------------------------------------------------------
             selectionAnnotation.copy(controller.getUpdatedAnnotation());
+            updateRect(selectionRect, selectionAnnotation); // update rect if annotation has updated.
 
             // NOTE: potential updates to labels/comments and frequency bounds)
             updateAnnotationDisplay();
@@ -604,11 +626,22 @@ public class MainController {
             selectionNameField.getText(),
             selectionDescField.getText());
 
-        // NOTE: create rect/label for this annotation.
-        createRectangleForData(selectAnnot);
-
-        // clear selection (the added annotation will be displayed)
+        // reset the selection variables
         resetSelection();
+
+        MouseEvent fakeClick = new MouseEvent(
+            MouseEvent.MOUSE_CLICKED, 0, 0, 0, 0,
+            MouseButton.PRIMARY, 1,
+            false, false, false, false, // Shift, Ctrl, Alt, Meta
+            true, false, false, true,   // Primary, Middle, Secondary, Synthesized
+            false, false, null
+        );
+
+        // NOTE: create rect/label for this annotation.
+        //       trigger mouse click event for rect to "select" it
+        //       so that it can jump straight into analysis
+        Rectangle rect = createRectangleForData(selectAnnot);
+        rect.fireEvent(fakeClick);
 
         // refresh display
         updateAnnotationDisplay();
@@ -767,6 +800,41 @@ public class MainController {
         updateRulers();
         renderSpectrogram(waterfall);
     }
+
+    private void updateRect(Rectangle rect, SigMfAnnotation annot) {
+        double canvasW = spectrogramCanvas.getWidth();
+        double canvasH = spectrogramCanvas.getHeight();
+        double sampleRate = sigMfHelper.getMetadata().global().sampleRate();
+        double centerFreq = sigMfHelper.getMetadata().captures().get(0).frequency();
+
+
+        long offsetInSamples = annot.getSampleStart() - currentSampleOffset;
+        double x = (double) offsetInSamples / fftSize;
+        double width = (double) annot.getSampleCount() / fftSize;
+
+        // 2. Calculate Vertical (Frequency) Position
+        // Map Frequency back to 0.0-1.0 range of the current capture bandwidth
+        double bw = sampleRate;
+        double fLowRel = (annot.getFreqLowerEdge() - (centerFreq - bw / 2)) / bw;
+        double fHighRel = (annot.getFreqUpperEdge() - (centerFreq - bw / 2)) / bw;
+        double y = (1.0 - fHighRel) * canvasH;
+        double height = (fHighRel - fLowRel) * canvasH;
+
+        // Update rectangle
+        rect.setX(x);
+        rect.setWidth(width);
+        rect.setY(y);
+        rect.setHeight(height);
+        rect.setVisible(x + width > 0 && x < canvasW);
+
+        // if (!showAnnotationsCheckbox.isSelected()) {
+        if (!menuItemShowAnnotations.isSelected()) {
+            // keep hidden
+            rect.setVisible(false);
+
+        }
+    }
+
     /**
      * Prepares a {@code Label} and a {@code Rectangle} to represent the
      * provided annotation
@@ -837,6 +905,8 @@ public class MainController {
                 selectionStartWidthSamples = cAnnot.getSampleCount();
                 selectionFreqLow =  cAnnot.getFreqLowerEdge();
                 selectionFreqHigh = cAnnot.getFreqUpperEdge();
+                MC_LOGGER.info("Update selection rectangle");
+                updateRect(selectionRect, selectionAnnotation);
                 selectionRect.setVisible(true);
 
                 //---------------  update UI  ------------------------
@@ -849,6 +919,7 @@ public class MainController {
                     String.format("%.6f MHz", cAnnot.getFreqUpperEdge() / 1e6));
                 lblSelectionStart.setText(String.format("%d samples", cAnnot.getSampleStart()));
                 lblSelectionDur.setText(String.format("%d samples", cAnnot.getSampleCount()));
+                updateDisplay();
             }
         });
         return rect;
@@ -866,25 +937,8 @@ public class MainController {
     public void updateAnnotationDisplay() {
 
         annotationMap.forEach((rect, group) -> {
-            double canvasW = spectrogramCanvas.getWidth();
-            double canvasH = spectrogramCanvas.getHeight();
-            double sampleRate = sigMfHelper.getMetadata().global().sampleRate();
-            double centerFreq = sigMfHelper.getMetadata().captures().get(0).frequency();
-
-            // Calculate Horizontal (Time) Position
-            long offsetInSamples = group.data.getSampleStart() - currentSampleOffset;
-            double x = (double) offsetInSamples / fftSize;
-            double width = (double) group.data.getSampleCount() / fftSize;
-
-            // 2. Calculate Vertical (Frequency) Position
-            // Map Frequency back to 0.0-1.0 range of the current capture bandwidth
-            double bw = sampleRate;
-            double fLowRel = (group.data.getFreqLowerEdge() - (centerFreq - bw / 2)) / bw;
-            double fHighRel = (group.data.getFreqUpperEdge() - (centerFreq - bw / 2)) / bw;
-
-            // Invert for Canvas (0 is top)
-            double y = (1.0 - fHighRel) * canvasH;
-            double height = (fHighRel - fLowRel) * canvasH;
+            // update rect (x,y,width, height) based on annotation information
+            updateRect(rect, group.data);
 
             // NOTE: check for custom color provided the label for this annotation
             if (annotationStyles.containsKey(group.label.getText())) {
@@ -900,13 +954,6 @@ public class MainController {
             group.label.setText(group.data.getLabel());
             group.tooltip.setText(group.data.getComment());
 
-            rect.setX(x);
-            rect.setWidth(width);
-            rect.setY(y);
-            rect.setHeight(height);
-
-            rect.setVisible(x + width > 0 && x < canvasW);
-
             // Position the label at the top-left of the rectangle
             group.label.setLayoutX(rect.getX());
             group.label.setLayoutY(rect.getY() - 20); // Position slightly above the box
@@ -914,12 +961,6 @@ public class MainController {
             // Match visibility
             group.label.setVisible(rect.isVisible());
 
-            // if (!showAnnotationsCheckbox.isSelected()) {
-            if (!menuItemShowAnnotations.isSelected()) {
-                // keep hidden
-                rect.setVisible(false);
-                group.label.setVisible(false);
-            }
         });
     }
 
@@ -952,9 +993,11 @@ public class MainController {
         int fftSize = waterfallData[0].length;
         double fs = sigMfHelper.getMetadata().global().sampleRate();
 
+        // NOTE: waterfallData uses Common Math FFT with no normalization
+        //       that scales by 1/fftSize**2
+        //       Also convert from dB/bin -> dB/Hz
         double binBandwidth = fs / fftSize;
-        double conversion = 10 * Math.log10(binBandwidth);
-        conversion = 0; // not working right
+        double conversion = 10 * Math.log10(binBandwidth) + 20 * Math.log10(fftSize);
 
         for (int t = 0; t < canvasW; t++) {
             for (int f = 0; f < canvasH; f++) {

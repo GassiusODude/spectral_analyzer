@@ -35,9 +35,19 @@
           </Menu>
           <Menu text="Preferences">
             <items>
+              <CustomMenuItem hideOnClick="false">
+                <content>
+                    <VBox alignment="CENTER_LEFT" spacing="5">
+                      <Separator prefWidth="200" />
+                      <Label text="ANNOTATION SETTINGS"
+                            style="-fx-font-weight: bold; -fx-text-fill: #888888; -fx-padding: 0 0 0 5;" />
+                    </VBox>
+                  </content>
+              </CustomMenuItem>
+
               <CheckMenuItem fx:id="menuItemShowAnnotations" text="Show Annotations" selected="true" />
-              <MenuItem text="Custom Annotation Settings..." onAction="#handleOpenColorDialog" />
-              <MenuItem text="Default Color:">
+              <MenuItem text="Custom Annotation Dialog" onAction="#handleOpenColorDialog" />
+              <MenuItem text="Default Annotation Color">
                   <graphic>
                       <ColorPicker fx:id="annotationColorPicker" onAction="#updateAnnotationDisplay" style="-fx-color-label-visible: false;" />
 
@@ -48,6 +58,15 @@
                       <ColorPicker fx:id="selectColorPicker" onAction="#updateDisplay" style="-fx-color-label-visible: false;" />
                   </graphic>
               </MenuItem>
+              <CustomMenuItem hideOnClick="false">
+                <content>
+                    <VBox alignment="CENTER_LEFT" spacing="5">
+                      <Separator prefWidth="200" />
+                      <Label text="SPECTROGRAM SETTINGS"
+                            style="-fx-font-weight: bold; -fx-text-fill: #888888; -fx-padding: 0 0 0 5;" />
+                    </VBox>
+                  </content>
+              </CustomMenuItem>
               <RadioMenuItem fx:id="radioGrayscale" text="Grayscale" onAction="#handleColorMapChange" selected="true">
                 <toggleGroup>
                   <ToggleGroup fx:id="colorMapGroup" />
