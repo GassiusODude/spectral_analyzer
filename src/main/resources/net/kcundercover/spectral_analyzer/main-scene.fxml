@@ -8,6 +8,7 @@
 <?import javafx.scene.control.Separator?>
 <?import javafx.scene.control.TextField?>
 <?import javafx.scene.layout.BorderPane?>
+<?import javafx.scene.layout.ColumnConstraints?>
 <?import javafx.scene.layout.GridPane?>
 <?import javafx.scene.layout.HBox?>
 <?import javafx.scene.layout.Pane?>
@@ -34,6 +35,8 @@
           </Menu>
           <Menu text="Preferences">
             <items>
+              <CheckMenuItem fx:id="menuItemShowAnnotations" text="Show Annotations" selected="true" />
+              <MenuItem text="Custom Annotation Settings..." onAction="#handleOpenColorDialog" />
               <MenuItem text="Default Color:">
                   <graphic>
                       <ColorPicker fx:id="annotationColorPicker" onAction="#updateAnnotationDisplay" style="-fx-color-label-visible: false;" />
@@ -45,6 +48,12 @@
                       <ColorPicker fx:id="selectColorPicker" onAction="#updateDisplay" style="-fx-color-label-visible: false;" />
                   </graphic>
               </MenuItem>
+              <RadioMenuItem fx:id="radioGrayscale" text="Grayscale" onAction="#handleColorMapChange" selected="true">
+                <toggleGroup>
+                  <ToggleGroup fx:id="colorMapGroup" />
+                </toggleGroup>
+              </RadioMenuItem>
+              <RadioMenuItem fx:id="radioHeatmap" text="Heatmap" onAction="#handleColorMapChange" toggleGroup="$colorMapGroup" />
               <CheckMenuItem fx:id="fastDownConverter"
                             text="Use Fast Resample" />
             </items>
@@ -83,15 +92,29 @@
                               snapToTicks="true" showTickMarks="true"/>
                       <Label fx:id="lblNfftValue" text="1024" style="-fx-text-fill: #00aaff;"/>
                   </VBox>
-                  <Separator opacity="0.3"/>
-                  <!-- SECTION 1: ANNOTATION SETTINGS -->
-                  <VBox spacing="10">
-                    <Label text="ANNOTATIONS" style="-fx-text-fill: #00aaff; -fx-font-weight: bold; -fx-font-size: 12;"/>
-                    <CheckBox fx:id="showAnnotationsCheckbox" text="Show Annotations"
-                              selected="true" style="-fx-text-fill: white;" onAction="#updateAnnotationDisplay"/>
+                  <GridPane hgap="10" vgap="10" alignment="CENTER_LEFT">
+                    <columnConstraints>
+                      <ColumnConstraints hgrow="NEVER" /> <!-- Labels stay small -->
+                      <ColumnConstraints hgrow="ALWAYS" /> <!-- TextFields stretch to fill -->
+                    </columnConstraints>
+                    <!-- Row 0: Min dB -->
+                    <Label text="Min dB:" style="-fx-text-fill: #ffffff"
+                          GridPane.rowIndex="0" GridPane.columnIndex="0"/>
 
-                    <Button text="Edit Label Colors..." maxWidth="Infinity" onAction="#handleOpenColorDialog"/>
-                  </VBox>
+                    <TextField fx:id="minDbInput" prefWidth="60" text="-100"
+                              GridPane.rowIndex="0" GridPane.columnIndex="1"/>
+
+                    <!-- Row 1: Max dB -->
+                    <Label text="Max dB:" style="-fx-text-fill: #ffffff"
+                          GridPane.rowIndex="1" GridPane.columnIndex="0"/>
+
+                    <TextField fx:id="maxDbInput" prefWidth="60" text="-20" maxWidth="Infinity"
+                              GridPane.rowIndex="1" GridPane.columnIndex="1"/>
+
+                    <!-- Row 2: Button spanning both columns -->
+                    <Button text="Update Scale" onAction="#handleScaleUpdate" maxWidth="Infinity"
+                            GridPane.rowIndex="2" GridPane.columnIndex="0" GridPane.columnSpan="2"/>
+                  </GridPane>
 
                   <Separator opacity="0.3"/>
 

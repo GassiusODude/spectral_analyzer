@@ -192,6 +192,7 @@ public class AnalysisDialogController {
         // Implementation requires an FFT library like JTransforms
         // 1. Combine data[0] and data[1] into complex array
         int psdNfft = 8192;
+        double offset;
         double[][] freqAndPsd;
         if (data[0].length < psdNfft) {
             ADC_LOGGER.warn("Short signal in PSD, single window analysis, and different NFFT");
@@ -202,13 +203,18 @@ public class AnalysisDialogController {
                 data, sampleRate, psdNfft);
         }
 
+        // FIXME: (not working)
+        //        Attempt to compare against threshold used in spectrogram)
+        // offset = 10 * Math.log10(sampleRate / freqAndPsd[0].length);
+        offset = 0;
+
         // get the true center from the provided annotation
         double trueCenterFreq = 0.5 * (activeAnnotation.getFreqLowerEdge() + activeAnnotation.getFreqUpperEdge());
 
         for (int ind = 0; ind < freqAndPsd[0].length; ind++) {
             seriesPSD.add(
                 freqAndPsd[0][ind] + trueCenterFreq,
-                freqAndPsd[1][ind], false);
+                freqAndPsd[1][ind] + offset, false);
         }
         seriesPSD.fireSeriesChanged();
         resetAxes(viewPSD, "Frequency (Hz)", "Power/Hz");
@@ -359,13 +365,6 @@ public class AnalysisDialogController {
             plot.addRangeMarker(passbandMarker);
 
             this.currentPassbandLevel = y;
-        }
-
-        // Store values to member variables for SNR calculation
-        if (event.isControlDown()) {
-            currentNoiseFloor = y;
-        } else {
-            currentPassbandLevel = y;
         }
 
         // Refresh the legend/subtitle

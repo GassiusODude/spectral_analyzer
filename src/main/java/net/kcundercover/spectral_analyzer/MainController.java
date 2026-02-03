@@ -21,6 +21,7 @@ import javafx.scene.control.Tooltip;
 import javafx.scene.canvas.Canvas;
 import javafx.scene.canvas.GraphicsContext;
 import javafx.scene.control.Label;
+import javafx.scene.control.RadioMenuItem;
 import javafx.scene.control.ScrollBar;
 import javafx.scene.Cursor;
 import javafx.scene.image.PixelWriter;      // for fast drawing
@@ -68,10 +69,13 @@ public class MainController {
     private SigMfHelper sigMfHelper = new SigMfHelper();
     private long currentSampleOffset = 0; // Where we are in the file
     private int fftSize;
+    private double minDecibel = -100.0;
+    private double maxDecibel = 0.0;
 
     // track the input file path
     private Path inputFile;
     private long totalSamples;
+
 
     /**
      * Custom style for annotation based on label
@@ -95,10 +99,10 @@ public class MainController {
     @FXML private ScrollBar fileScrollBar;
 
     // -----------------------------  controls  -------------------------------
-
     // Menu
     @FXML CheckMenuItem fastDownConverter;
     @FXML ColorPicker selectColorPicker;
+    @FXML CheckMenuItem menuItemShowAnnotations;
 
     // ==========================================
     // Right Panel
@@ -217,6 +221,10 @@ public class MainController {
         spectrogramCanvas.widthProperty().bind(plotContainer.widthProperty());
         spectrogramCanvas.heightProperty().bind(plotContainer.heightProperty());
 
+        menuItemShowAnnotations.selectedProperty().addListener((observable, oldValue, newValue) -> {
+            updateAnnotationDisplay();
+
+        });
         ChangeListener<Number> resizeListener = (obs, o, n) -> {
             if (redrawPending.compareAndSet(false, true)) {
                 Platform.runLater(() -> {
@@ -385,7 +393,8 @@ public class MainController {
 
                 // track the input meta file
                 inputFile = selectedFile.toPath();
-
+                ((Stage) ownerWindow).setTitle(
+                    String.format("Spectral Analyzer(file='%s')", inputFile.getFileName()));
                 // load annotations
                 List<SigMfAnnotation> fileAnnotations = sigMfHelper.getParsedAnnotations();
                 for (SigMfAnnotation data : fileAnnotations) {
@@ -400,7 +409,7 @@ public class MainController {
                 totalSamples = totalBytes / bytesPerSample;
 
                 fileScrollBar.setMin(0);
-                fileScrollBar.setMax(totalSamples - (spectrogramCanvas.getHeight() * 1024));
+                fileScrollBar.setMax(totalSamples - (spectrogramCanvas.getHeight() * fftSize));
                 fileScrollBar.setValue(0);
 
                 MC_LOGGER.info(
@@ -445,6 +454,30 @@ public class MainController {
 
         sigMfHelper.saveSigMF(sortedAnnotations);
         MC_LOGGER.info("SigMF saved: {} annotations written in chronological order.", sortedAnnotations.size());
+    }
+
+    @FXML TextField minDbInput;
+    @FXML TextField maxDbInput;
+
+    /**
+     * Handle change in the decibel to color mapping.
+     * @param event
+     */
+    @FXML
+    private void handleScaleUpdate(ActionEvent event) {
+        double minDb = Double.parseDouble(minDbInput.getText());
+        double maxDb = Double.parseDouble(maxDbInput.getText());
+
+        if (minDb >= maxDb) {
+            // reject bounds
+            minDbInput.setText(String.valueOf(minDecibel));
+            maxDbInput.setText(String.valueOf(maxDecibel));
+        } else {
+            // update bounds
+            minDecibel = minDb;
+            maxDecibel = maxDb;
+            updateDisplay();
+        }
     }
 
     /**
@@ -615,7 +648,7 @@ public class MainController {
     // ============================================================================================
     //                                  Helper functions
     // ============================================================================================
-
+    @FXML RadioMenuItem radioGrayscale;
     /**
      * Convert the double value to color value
      *
@@ -624,17 +657,24 @@ public class MainController {
      */
     private Color getColorForMagnitude(double db) {
         // Normalize dB (assume range -100 to 0)
-        double normalized = (db + 100) / 100.0;
+        // double normalized = (db + 100) / 100.0;
+        double normalized = (db - minDecibel) / (maxDecibel - minDecibel);
         normalized = Math.clamp(normalized, 0.0, 1.0); // Java 21+ clamp
 
-        // Simple "Heat" map: Black -> Blue -> Red -> Yellow
-        if (normalized < 0.2) {
-            return Color.BLACK;
+        if (radioGrayscale.isSelected()) {
+            // ================  Grayscale =====================
+            // Linearly interpolate from Black (0.0) to White (1.0)
+            return Color.BLACK.interpolate(Color.WHITE, normalized);
+        } else {
+            // Simple "Heat" map: Black -> Blue -> Red -> Yellow
+            if (normalized < 0.2) {
+                return Color.BLACK;
+            }
+            if (normalized < 0.5) {
+                return Color.BLUE.interpolate(Color.RED, (normalized - 0.2) / 0.3);
+            }
+            return Color.RED.interpolate(Color.YELLOW, (normalized - 0.5) / 0.5);
         }
-        if (normalized < 0.5) {
-            return Color.BLUE.interpolate(Color.RED, (normalized - 0.2) / 0.3);
-        }
-        return Color.RED.interpolate(Color.YELLOW, (normalized - 0.5) / 0.5);
     }
 
     /**
@@ -874,12 +914,18 @@ public class MainController {
             // Match visibility
             group.label.setVisible(rect.isVisible());
 
-            if (!showAnnotationsCheckbox.isSelected()) {
+            // if (!showAnnotationsCheckbox.isSelected()) {
+            if (!menuItemShowAnnotations.isSelected()) {
                 // keep hidden
                 rect.setVisible(false);
                 group.label.setVisible(false);
             }
         });
+    }
+
+    @FXML
+    private void handleColorMapChange(ActionEvent e) {
+        updateDisplay(); // redraw for the new color.
     }
 
     /**
@@ -904,6 +950,11 @@ public class MainController {
         int canvasW = (int) spectrogramCanvas.getWidth();
         int canvasH = (int) spectrogramCanvas.getHeight();
         int fftSize = waterfallData[0].length;
+        double fs = sigMfHelper.getMetadata().global().sampleRate();
+
+        double binBandwidth = fs / fftSize;
+        double conversion = 10 * Math.log10(binBandwidth);
+        conversion = 0; // not working right
 
         for (int t = 0; t < canvasW; t++) {
             for (int f = 0; f < canvasH; f++) {
@@ -911,7 +962,9 @@ public class MainController {
                 // We scale the fftSize down to the canvasH
                 int fftBinIndex = (int) ((double) f / canvasH * fftSize);
 
-                double db = waterfallData[t][fftBinIndex];
+                // NOTE: trying to compensate so threshold is not dependent of NFFT
+                double db = waterfallData[t][fftBinIndex] - conversion;
+                // double db = waterfallData[t][fftBinIndex];
                 Color color = getColorForMagnitude(db);
 
                 // Draw time on X, Frequency on Y (inverted so low freq is bottom)
@@ -967,7 +1020,6 @@ public class MainController {
         alert.setContentText(content);
         alert.showAndWait();
     }
-
 
     /**
      * Show dialog to configure custom color to annotation label mappings.
