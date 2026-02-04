@@ -13,6 +13,7 @@ import javafx.scene.control.ButtonType;
 import javafx.scene.control.CheckBox;
 import javafx.scene.control.CheckMenuItem;
 import javafx.scene.control.ColorPicker;
+import javafx.scene.control.ComboBox;
 import javafx.scene.control.Dialog;
 import javafx.scene.control.Slider;
 import javafx.scene.control.TextArea;
@@ -31,11 +32,13 @@ import javafx.scene.layout.Pane;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.HBox;    // For the timeAxis container
 import javafx.scene.layout.Region;
+import javafx.scene.layout.VBox;
 import javafx.scene.shape.Rectangle;
 import javafx.scene.text.Font;
 import javafx.scene.paint.Color;
 import javafx.scene.Parent;
 import javafx.scene.Scene;
+import javafx.scene.shape.Line;
 import javafx.stage.FileChooser;
 import javafx.stage.Modality;
 import javafx.stage.Stage;
@@ -92,11 +95,13 @@ public class MainController {
     @FXML private StackPane plotContainer;
     @FXML private Canvas spectrogramCanvas;
     @FXML private Pane annotationOverlay;
+    @FXML private VBox rightPanel;
 
     // the horizontal and vertical axes
     @FXML private Pane frequencyRuler;
     @FXML private HBox timeAxis;
-    @FXML private Region axisSpacer;
+    @FXML private Pane timeLabelsContainer;
+    @FXML private Region leftAxisSpacer;
     @FXML private Region rightAxisSpacer;
     @FXML private ScrollBar fileScrollBar;
 
@@ -227,12 +232,19 @@ public class MainController {
         annotationOverlay.getChildren().add(selectionRect);
         selectionRect.setVisible(false);
 
+        // track the width of the right panel and update right axis spacer
+        rightPanel.widthProperty().addListener((obs, oldVal, newVal) -> {
+            double width = newVal.doubleValue();
+            rightAxisSpacer.setMinWidth(width);
+            rightAxisSpacer.setPrefWidth(width);
+            rightAxisSpacer.setMaxWidth(width);
+        });
+
         spectrogramCanvas.widthProperty().bind(plotContainer.widthProperty());
         spectrogramCanvas.heightProperty().bind(plotContainer.heightProperty());
 
         menuItemShowAnnotations.selectedProperty().addListener((observable, oldValue, newValue) -> {
             updateAnnotationDisplay();
-
         });
         ChangeListener<Number> resizeListener = (obs, o, n) -> {
             if (redrawPending.compareAndSet(false, true)) {
@@ -685,6 +697,7 @@ public class MainController {
     //                                  Helper functions
     // ============================================================================================
     @FXML RadioMenuItem radioGrayscale;
+    @FXML ComboBox comboColorMap;
     /**
      * Convert the double value to color value
      *
@@ -697,20 +710,31 @@ public class MainController {
         double normalized = (db - minDecibel) / (maxDecibel - minDecibel);
         normalized = Math.clamp(normalized, 0.0, 1.0); // Java 21+ clamp
 
-        if (radioGrayscale.isSelected()) {
-            // ================  Grayscale =====================
-            // Linearly interpolate from Black (0.0) to White (1.0)
-            return Color.BLACK.interpolate(Color.WHITE, normalized);
-        } else {
-            // Simple "Heat" map: Black -> Blue -> Red -> Yellow
-            if (normalized < 0.2) {
-                return Color.BLACK;
-            }
-            if (normalized < 0.5) {
-                return Color.BLUE.interpolate(Color.RED, (normalized - 0.2) / 0.3);
-            }
-            return Color.RED.interpolate(Color.YELLOW, (normalized - 0.5) / 0.5);
+        String comboChoice = (String) comboColorMap.getValue();
+        if (comboChoice == null) {
+            // if not ready...default to grayscale
+            comboChoice = "Grayscale";
         }
+
+        // if (radioGrayscale.isSelected()) {
+        switch(comboChoice) {
+            case "Grayscale":
+                // ================  Grayscale =====================
+                // Linearly interpolate from Black (0.0) to White (1.0)
+                return Color.BLACK.interpolate(Color.WHITE, normalized);
+
+            case "Heatmap":
+                            // Simple "Heat" map: Black -> Blue -> Red -> Yellow
+                if (normalized < 0.2) {
+                    return Color.BLACK;
+                }
+                if (normalized < 0.5) {
+                    return Color.BLUE.interpolate(Color.RED, (normalized - 0.2) / 0.3);
+                }
+                return Color.RED.interpolate(Color.YELLOW, (normalized - 0.5) / 0.5);
+            default:
+                return Color.BLACK.interpolate(Color.WHITE, normalized);
+        } // end of switch
     }
 
     /**
@@ -774,31 +798,32 @@ public class MainController {
             selectionRect.setVisible(newX + newWidth > 0 && newX < canvasW);
         }
 
-        // spacer to avoid frequency axis
-        timeAxis.getChildren().retainAll(axisSpacer);
-        axisSpacer.setMinWidth(frequencyRuler.getWidth());
-        axisSpacer.setPrefWidth(frequencyRuler.getWidth());
+        timeLabelsContainer.getChildren().clear();
 
-
-        // --- Update Time Axis ---
-        // Add 5 time markers across the width
+        // --------------------------------------------------------------
+        // Create 5 equidistant points for the time axis
+        // --------------------------------------------------------------
+        double labelWidth = 60;
         for (int i = 0; i <= 4; i++) {
-            int xPixel = (canvasW / 4) * i;
-            long sampleAtPixel = currentSampleOffset + ((long) xPixel * fftSize);
+            double xPixel = (canvasW * 0.25) * i;
+            long sampleAtPixel = currentSampleOffset + ((long) (xPixel * fftSize));
             double seconds = (double) sampleAtPixel / sampleRate;
 
-            Label timeLabel = new Label(String.format(" %.3fs", seconds));
+            Line tick = new Line(xPixel, 0, xPixel, 5);
+            tick.setStroke(Color.ALICEBLUE);
+
+            Label timeLabel = new Label(String.format(" %.6fs", seconds));
+            timeLabel.setPrefWidth(labelWidth);
             timeLabel.setTextFill(Color.LIGHTGRAY);
             timeLabel.setStyle("-fx-font-family: 'Consolas'; -fx-font-size: 10px;");
-
-            // Use a Region/Spacer to push labels apart if not using absolute positioning
-            timeAxis.getChildren().add(timeLabel);
-            if (i < 4) {
-                javafx.scene.layout.Region spacer = new javafx.scene.layout.Region();
-                javafx.scene.layout.HBox.setHgrow(spacer, javafx.scene.layout.Priority.ALWAYS);
-                timeAxis.getChildren().add(spacer);
-            }
+            timeLabel.setLayoutX(xPixel - (labelWidth / 2));
+            timeLabel.setLayoutY(8); // shift text under the ticks
+            timeLabelsContainer.getChildren().addAll(tick, timeLabel);
         }
+
+        // enforce the left/right spacers match the appropriate panels
+        leftAxisSpacer.setMinWidth(frequencyRuler.getWidth());
+        rightAxisSpacer.setMinWidth(rightPanel.getWidth());
 
         updateRulers();
         renderSpectrogram(waterfall);

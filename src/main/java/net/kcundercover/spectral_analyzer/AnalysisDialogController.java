@@ -3,7 +3,6 @@ package net.kcundercover.spectral_analyzer;
 import javafx.fxml.FXML;
 import javafx.event.ActionEvent;
 import javafx.scene.control.Button;
-import javafx.scene.control.CheckBox;
 import javafx.scene.control.Slider;
 import javafx.scene.control.TextArea;
 import javafx.scene.control.TextField;
@@ -49,8 +48,8 @@ public class AnalysisDialogController {
     // ------------------------------------------------------------------------
     private ValueMarker passbandMarker;
     private ValueMarker noiseFloorMarker;
-    private double currentPassbandLevel = 0;
-    private double currentNoiseFloor = 0;
+    private double currentPassbandLevel = Double.NaN;
+    private double currentNoiseFloor = Double.NaN;
 
     // selection of frequency range in PSD
     // ------------------------------------------------------------------------
@@ -77,7 +76,6 @@ public class AnalysisDialogController {
     @FXML private TextArea txtAnnotComment;
     @FXML private Button btnUpdateFreq;
     @FXML private Button btnUpdateTime;
-    @FXML private CheckBox chkIncludeMetrics;
 
     private ChartViewer viewMagn;
     private ChartViewer viewFreq;
@@ -380,6 +378,10 @@ public class AnalysisDialogController {
 
         this.sampleRate = sampleRate;
         this.origSampleRate = origSampleRate;
+
+        // update markers
+        updateTimePlots(activeAnnotation.getSampleStart() / origSampleRate);
+        updateTimePlots((activeAnnotation.getSampleStart() + activeAnnotation.getSampleCount()) / origSampleRate);
         updateFrequencyPlots(activeAnnotation.getFreqLowerEdge());
         updateFrequencyPlots(activeAnnotation.getFreqUpperEdge());
 
@@ -665,13 +667,35 @@ public class AnalysisDialogController {
         }
     }
 
+    @FXML
+    private void handleAddMeasurements(ActionEvent e) {
+        // append to comment area
+        String current = txtAnnotComment.getText();
+
+        // --------------------------------------------------------------------
+        // NOTE: Add metrics to the comments section
+        // --------------------------------------------------------------------
+        if (!Double.isNaN(currentPassbandLevel)) {
+            current += String.format("%nSignal Power = %.2f dB/Hz", currentPassbandLevel);
+        }
+        if (!Double.isNaN(currentNoiseFloor)) {
+            current += String.format("%nNoise Power = %.2f dB/Hz", currentNoiseFloor);
+        }
+        if (!Double.isNaN(currentPassbandLevel) && !Double.isNaN(currentNoiseFloor)) {
+            double snr = currentPassbandLevel - currentNoiseFloor;
+            current += String.format("%nSNR = %.2f dB", snr);
+        }
+
+        txtAnnotComment.setText(current);
+
+    }
     /**
      * Updates the annotation's label and comment fields
      *
      * @param event The Button being clicked
      */
     @FXML
-    private void handleUpdate(ActionEvent event) {
+    private void handleUpdateLabelAndComment(ActionEvent event) {
         if (activeAnnotation == null) {
             return;
         }
@@ -681,19 +705,9 @@ public class AnalysisDialogController {
 
         // ------------------- if "Include Metrics" checkbox is selected  -------------------------
         String finalComment = txtAnnotComment.getText();
-        if (chkIncludeMetrics.isSelected()) {
-            // NOTE: Add metrics to the comments section of the annotation
-            double snr = currentPassbandLevel - currentNoiseFloor;
-            String metrics = String.format(
-                "%nSignal Power = %.2f dB/Hz%nNoise Floor = %.2f dB/Hz%nSNR = %.2f dB%n",
-                currentPassbandLevel, currentNoiseFloor, snr);
-
-            finalComment += metrics;
-        }
 
         // update comment
         activeAnnotation.setComment(finalComment);
-
 
         // Trigger your app's SigMF save logic here
         ADC_LOGGER.info("Annotation updated and metrics appended.");

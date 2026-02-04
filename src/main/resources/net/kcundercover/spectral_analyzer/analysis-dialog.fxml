@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
+<?import javafx.geometry.Insets?>
 <?import javafx.scene.chart.*?>
 <?import javafx.scene.control.*?>
 <?import javafx.scene.layout.*?>
@@ -14,30 +15,51 @@
     <TabPane tabClosingPolicy="UNAVAILABLE" VBox.vgrow="ALWAYS">
         <tabs>
             <!-- Magnitude Plot-->
-            <Tab text="Time Domain">
+            <Tab text="Magnitude Plot">
                 <VBox spacing="5">
                     <StackPane fx:id="containerMagn" VBox.vgrow="ALWAYS" />
-                    <Slider fx:id="alphaMagnSlider"
-                        min="0" max="1.0" value="1.0"
-                        showTickLabels="true" showTickMarks="true"
-                        majorTickUnit="0.1"  minorTickCount="10" />
+                    <HBox spacing="10" alignment="CENTER_LEFT" prefWidth="300.0">
+                        <padding>
+                            <Insets left="10" right="10" />
+                        </padding>
+                        <Label text="Smoothing" minWidth="75.0" />
+                        <Slider fx:id="alphaMagnSlider"
+                                min="0" max="1.0" value="1.0"
+                                showTickLabels="true" showTickMarks="true"
+                                majorTickUnit="0.5" minorTickCount="5"
+                                HBox.hgrow="ALWAYS" maxWidth="Infinity" />
+                    </HBox>
                 </VBox>
             </Tab>
 
-            <!-- Frequency PLot -->
-            <Tab text="Frequency">
+            <!-- Frequency Plot -->
+            <Tab text="Frequency Plot">
                 <VBox spacing="5">
                     <StackPane fx:id="containerFreq" VBox.vgrow="ALWAYS" />
-                    <Slider fx:id="alphaFreqSlider"
+                    <HBox spacing="10" alignment="CENTER_LEFT" prefWidth="300.0">
+                        <padding>
+                            <Insets left="10" right="10" />
+                        </padding>
+                        <Label text="Smoothing" minWidth="75.0" />
+                        <Slider fx:id="alphaFreqSlider"
+                                min="0" max="1.0" value="1.0"
+                                showTickLabels="true" showTickMarks="true"
+                                majorTickUnit="0.5" minorTickCount="5"
+                                HBox.hgrow="ALWAYS" maxWidth="Infinity" />
+                    </HBox>
+
+
+
+                    <!-- <Slider fx:id="alphaFreqSlider"
                         min="0" max="1.0" value="1.0"
                         showTickLabels="true" showTickMarks="true"
-                        majorTickUnit="0.1"  minorTickCount="100" />
+                        majorTickUnit="0.1"  minorTickCount="100" /> -->
 
                 </VBox>
             </Tab>
 
             <!-- PSD -->
-            <Tab text="PWelch">
+            <Tab text="Power Spectral Density">
                 <VBox spacing="5">
                     <StackPane fx:id="containerPSD" VBox.vgrow="ALWAYS" />
                             <!-- Instruction Bar -->
@@ -63,47 +85,67 @@
                 <children>
                     <Label text="Label:" GridPane.columnIndex="0" GridPane.rowIndex="0" />
                     <TextField fx:id="txtAnnotLabel" editable="true" GridPane.columnIndex="1" GridPane.rowIndex="0" />
+                    <Label text="Comment:" GridPane.columnIndex="0" GridPane.rowIndex="1" />
+                     <HBox spacing="5" alignment="CENTER_LEFT"
+                            GridPane.hgrow="ALWAYS" maxWidth="Infinity"
+                            GridPane.columnIndex="1" GridPane.rowIndex="1">
+                        <TextArea fx:id="txtAnnotComment"
+                            prefHeight="80" maxWidth="Infinity"
+                            GridPane.columnIndex="1" GridPane.rowIndex="1"
+                            HBox.hgrow="ALWAYS"/>
 
-                    <Label text="Time Span:" GridPane.columnIndex="0" GridPane.rowIndex="1" />
-                    <HBox spacing="5" alignment="CENTER_LEFT" GridPane.columnIndex="1" GridPane.rowIndex="1">
-                        <TextField fx:id="txtAnnotTime" editable="false" HBox.hgrow="ALWAYS" />
-                        <Button fx:id="btnUpdateTime" text="Update Time" onAction="#handleUpdateTimeFromMarkers">
+                        <Button fx:id="btnAddMeasurements" onAction="#handleAddMeasurements"
+                            text="Update&#10;Measurements" wrapText="true" prefHeight="80">
+                            <tooltip>
+                                <Tooltip text="Add measurements to comment based on user selection." />
+                            </tooltip>
+                        </Button>
+                    </HBox>
+                    <Button text="Update Label&#10;and Comment" onAction="#handleUpdateLabelAndComment"
+                            style="-fx-base: #e1f5fe;"
+                            GridPane.vgrow="ALWAYS" maxHeight="Infinity"
+                            maxWidth="Infinity" prefWidth="100"
+                            GridPane.columnIndex="2" GridPane.rowIndex="0" GridPane.rowSpan="2">
+                        <tooltip>
+                            <Tooltip text="Update Annotation with modifications to label and comment" />
+                        </tooltip>
+                    </Button>
+
+                    <!-- Time settings -->
+                    <Label text="Time Span:" GridPane.columnIndex="0" GridPane.rowIndex="2" />
+                    <TextField fx:id="txtAnnotTime" editable="false" HBox.hgrow="ALWAYS" GridPane.columnIndex="1" GridPane.rowIndex="2" />
+                    <Button fx:id="btnUpdateTime" text="Update Time" onAction="#handleUpdateTimeFromMarkers"
+                        style="-fx-base: #e1f5fe;"
+                        GridPane.vgrow="ALWAYS" maxHeight="Infinity"
+                        maxWidth="Infinity" prefWidth="100"
+                        GridPane.columnIndex="2" GridPane.rowIndex="2">
                             <tooltip>
                                 <Tooltip text="Update time selected magnitude/frequency charts." />
                             </tooltip>
                         </Button>
-                    </HBox>
-                    <Label text="Freq Range:" GridPane.columnIndex="0" GridPane.rowIndex="2" />
-                    <HBox spacing="5" alignment="CENTER_LEFT" GridPane.columnIndex="1" GridPane.rowIndex="2">
-                        <TextField fx:id="txtAnnotFreq" editable="false" HBox.hgrow="ALWAYS" />
-                        <!-- Button to update freq lo/hi from current markers -->
-                        <Button fx:id="btnUpdateFreq" text="Update Freqs" onAction="#handleUpdateFreqFromMarkers">
-                            <tooltip>
-                                <Tooltip text="Update frequency selected in PSD chart." />
-                            </tooltip>
-                        </Button>
-                    </HBox>
 
-                    <Label text="Comment:" GridPane.columnIndex="0" GridPane.rowIndex="3" />
-                    <TextArea fx:id="txtAnnotComment" prefHeight="50" GridPane.columnIndex="1" GridPane.rowIndex="3" />
+                    <!-- Freq Settings -->
+                    <Label text="Freq Range:" GridPane.columnIndex="0" GridPane.rowIndex="3" />
+                    <TextField fx:id="txtAnnotFreq" editable="false" HBox.hgrow="ALWAYS" GridPane.columnIndex="1" GridPane.rowIndex="3"/>
+                        <!-- Button to update freq lo/hi from current markers -->
+                    <Button fx:id="btnUpdateFreq" text="Update Freqs" onAction="#handleUpdateFreqFromMarkers"
+                        style="-fx-base: #e1f5fe;"
+                        GridPane.vgrow="ALWAYS" maxHeight="Infinity"
+                        maxWidth="Infinity" prefWidth="100"
+                        GridPane.columnIndex="2" GridPane.rowIndex="3">
+                        <tooltip>
+                            <Tooltip text="Update frequency selected in PSD chart." />
+                        </tooltip>
+                    </Button>
+
                 </children>
             </GridPane>
         </TitledPane>
 
         <!-- Global Metrics & Action Buttons -->
         <HBox alignment="CENTER_RIGHT" spacing="15" style="-fx-padding: 5;">
-            <CheckBox fx:id="chkIncludeMetrics"
-                    text="Add SNR/Noise/Power to Comment"
-                    selected="true" />
-
             <Region HBox.hgrow="ALWAYS" /> <!-- Pushes buttons to the right -->
 
-            <Button text="Update" onAction="#handleUpdate" prefWidth="100"
-                    style="-fx-base: #e1f5fe;">
-                <tooltip>
-                    <Tooltip text="Update Label and Comment" />
-                </tooltip>
-            </Button>
             <Button text="Close" onAction="#handleClose" prefWidth="80" />
         </HBox>
     </VBox>

@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <?import javafx.scene.canvas.Canvas?>
+<?import javafx.collections.FXCollections?>
+<?import java.lang.String?>
 
 <?import javafx.scene.control.Button?>
 <?import javafx.scene.control.CheckBox?>
@@ -67,12 +69,19 @@
                     </VBox>
                   </content>
               </CustomMenuItem>
-              <RadioMenuItem fx:id="radioGrayscale" text="Grayscale" onAction="#handleColorMapChange" selected="true">
-                <toggleGroup>
-                  <ToggleGroup fx:id="colorMapGroup" />
-                </toggleGroup>
-              </RadioMenuItem>
-              <RadioMenuItem fx:id="radioHeatmap" text="Heatmap" onAction="#handleColorMapChange" toggleGroup="$colorMapGroup" />
+              <CustomMenuItem hideOnClick="false">
+                  <content>
+                      <ComboBox fx:id="comboColorMap" prefWidth="150.0" promptText="Select Item">
+                          <items>
+                              <FXCollections fx:factory="observableArrayList">
+                                  <String fx:value="Grayscale" />
+                                  <String fx:value="Heatmap" />
+                              </FXCollections>
+                          </items>
+                      </ComboBox>
+                  </content>
+              </CustomMenuItem>
+
               <CheckMenuItem fx:id="fastDownConverter"
                             text="Use Fast Resample" />
             </items>
@@ -102,7 +111,7 @@
             </StackPane>
           </center>
           <right>
-            <VBox spacing="20" prefWidth="220" style="-fx-background-color: #2a2a2a; -fx-padding: 15;">
+            <VBox fx:id="rightPanel" spacing="20" prefWidth="220" style="-fx-background-color: #2a2a2a; -fx-padding: 15;">
               <children>
                   <VBox spacing="5">
                       <Label text="NFFT (Resolution)" style="-fx-text-fill: #cccccc; -fx-font-size: 11;"/>
@@ -182,17 +191,12 @@
           <bottom>
             <VBox prefHeight="50.0" alignment="CENTER_LEFT" style="-fx-background-color: #1a1a1a;">
                 <HBox fx:id="timeAxis" prefHeight="25" alignment="CENTER_LEFT" style="-fx-background-color: #1a1a1a;">
-                    <!-- 1. Left Spacer (matches Frequency Ruler) -->
-                    <Region fx:id="axisSpacer" prefWidth="80" />
-
-                    <!-- 2. The Actual Labels Area -->
-                    <!-- Use HBox.hgrow="ALWAYS" so this area expands to fill the middle -->
-                    <HBox fx:id="timeLabelsContainer" HBox.hgrow="ALWAYS" />
-
-                    <!-- 3. Right Spacer (matches Side Panel width) -->
-                    <Region fx:id="rightAxisSpacer" prefWidth="220" minWidth="220" />
+                    <Region fx:id="leftAxisSpacer" prefWidth="80"
+                      style="-fx-background-color: transparent; -fx-border-color: transparent;"/>
+                    <Pane fx:id="timeLabelsContainer" HBox.hgrow="ALWAYS" />
+                    <Region fx:id="rightAxisSpacer" prefWidth="220" minWidth="220"
+                      style="-fx-background-color: transparent; -fx-border-color: transparent;"/>
                 </HBox>
-
                 <ScrollBar fx:id="fileScrollBar" min="0" max="100" orientation="HORIZONTAL" />
             </VBox>
           </bottom>

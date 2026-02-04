@@ -12,16 +12,16 @@ The Spectral Analyzer allows the user to select time/frequency blocks and manual
   * I manually added an `Unknown` signal annotation shown in red.
   * I deleted one of the `WiMax Data` annotations and created a modified annotation.  I used the analysis to get the power measurements.  The `comment` part of the annotation is displayed as a tool tip or on the right when I select the annotation.
 
-![Screenshotfs](./docs/screenshot.png.png)
+![Screenshotfs](./docs/screenshot_spectrogram.png)
 
 * The PSB tab of the `Analysis Dialog` is shown below.  This takes user input
   * User selects Passband with standard mouse `Click`.
   * User selects Noise Floor with `Ctrl + Click`.
   * User selects low and high frequency with `Shift + Click`.
-  * `Update frequency` button will apply user selected bandwidth if the frequencies are selected.
+  * `Update Freqs` button will apply user selected bandwidth if the frequencies are selected.
   * If passband and noise floor are selected, and the `Update` button is pressed, the annotation is updated with measurements of the passband and noise floor average power and the estimate SNR.
 
-![Screenshot Analysis Dialog](./docs/screenshot_analysis_dialog.png)
+![Screenshot Analysis Dialog](./docs/screenshot_psd_dialog.png)
 
 ## Installation
 
@@ -57,11 +57,13 @@ This project is implemented in Java 21.
     # Build
     # ===============================================================
     # build a Spring Boot JAR
+    # NOTE: on linux, may append "-boot" to the name.
     ./gradlew bootJar
 
     # ===============================================================
     # Run in Development
     # ===============================================================
+
     java -jar .\build\libs\spectral_analyzer-$VERSION.jar
 ~~~
 
