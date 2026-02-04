@@ -221,6 +221,8 @@ public class MainController {
         selectColorPicker.setValue(Color.LIME);
         resetSelection();
 
+        minDecibel = Double.parseDouble(minDbInput.getText());
+        maxDecibel = Double.parseDouble(maxDbInput.getText());
         // initialize selection rectangle to be hidden
         annotationOverlay.getChildren().add(selectionRect);
         selectionRect.setVisible(false);
@@ -547,6 +549,7 @@ public class MainController {
         double targetFs = inputFs / down;
 
         final double finalTargetFs = targetFs;
+        final double finalStartTime = targetStart / inputFs;
         String dataType = sigMfHelper.getMetadata().global().datatype();
 
         // Run off-thread to avoid [lication Thread] freezes
@@ -562,7 +565,7 @@ public class MainController {
                 fastDownConverter.isSelected()
         )).thenAccept(data -> {
             // Open the new Dialog on the UI thread
-            Platform.runLater(() -> openAnalysisDialog(data, finalTargetFs));
+            Platform.runLater(() -> openAnalysisDialog(data, finalTargetFs, finalStartTime));
         });
     }
 
@@ -574,7 +577,7 @@ public class MainController {
      * @param data Downconverted signal
      * @param fs Sample rate of the down converted signal
      */
-    private void openAnalysisDialog(double[][] data, double fs) {
+    private void openAnalysisDialog(double[][] data, double fs, double startTime) {
         try {
             FXMLLoader loader = new FXMLLoader(getClass().getResource("analysis-dialog.fxml"));
             Parent root = loader.load();
@@ -583,7 +586,7 @@ public class MainController {
             // Get the controller and "inject" the data
             // ------------------------------------------------------
             AnalysisDialogController controller = loader.getController();
-            controller.setAnalysisData(data, fs, origSampleRate, selectionAnnotation);
+            controller.setAnalysisData(data, fs, origSampleRate, startTime, selectionAnnotation);
 
             // Display
             // ------------------------------------------------------
@@ -905,7 +908,7 @@ public class MainController {
                 selectionStartWidthSamples = cAnnot.getSampleCount();
                 selectionFreqLow =  cAnnot.getFreqLowerEdge();
                 selectionFreqHigh = cAnnot.getFreqUpperEdge();
-                MC_LOGGER.info("Update selection rectangle");
+
                 updateRect(selectionRect, selectionAnnotation);
                 selectionRect.setVisible(true);
 

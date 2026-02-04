@@ -3,7 +3,6 @@ package net.kcundercover.spectral_analyzer.sigmf;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
-import com.fasterxml.jackson.core.type.TypeReference;
 import java.io.File;
 import java.io.IOException;
 import java.io.RandomAccessFile;
@@ -12,12 +11,10 @@ import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.file.Path;
 import java.util.List;
-import java.util.Map;
-
 import org.apache.logging.log4j.internal.annotation.SuppressFBWarnings;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import net.kcundercover.spectral_analyzer.sigmf.SigMfAnnotation;
+
 /**
  * SigMF Helper object
  */
@@ -60,11 +57,18 @@ public class SigMfHelper {
         }
     }
 
+    /**
+     * Get the file specified by property `inputMeta`,
+     * initialized in the `load()` method.
+     *
+     * @return File to the input metafila
+     */
     public File getCurrentMetaFile() {
         if (inputMeta == null) {
             return null;
         }
 
+        // prepare the File for the provided path
         File file = inputMeta.toFile();
         if (file.getName().endsWith(".sigmf-data")) {
             String path = file.getAbsolutePath().replace(".sigmf-data", ".sigmf-meta");
@@ -92,10 +96,7 @@ public class SigMfHelper {
      * @return List of SigMF Annotation objects
      */
     public List<SigMfAnnotation> getParsedAnnotations() {
-        ObjectMapper mapper = new ObjectMapper();
-        // This converts the raw Map from Jackson into your specific SigMfAnnotation records
-        return mapper.convertValue(metadata.annotations(),
-            new TypeReference<List<SigMfAnnotation>>() {});
+        return metadata.annotations();
     }
 
     public void saveSigMF(List<SigMfAnnotation> annotationList) {
@@ -103,14 +104,10 @@ public class SigMfHelper {
             // Use the class-level mapper and just enable the feature for this call
             mapper.enable(SerializationFeature.INDENT_OUTPUT);
 
-            List<Map<String, Object>> annotationMaps = annotationList.stream()
-                .map(annot -> mapper.convertValue(annot, new TypeReference<Map<String, Object>>() {}))
-                .toList();
-
             this.metadata = new SigMfMetadata(
                 metadata.global(),
                 metadata.captures(),
-                annotationMaps
+                annotationList
             );
 
             mapper.writeValue(getCurrentMetaFile(), this.metadata);

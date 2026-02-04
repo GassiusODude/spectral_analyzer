@@ -117,17 +117,17 @@
                       <ColumnConstraints hgrow="ALWAYS" /> <!-- TextFields stretch to fill -->
                     </columnConstraints>
                     <!-- Row 0: Min dB -->
-                    <Label text="Min dB:" style="-fx-text-fill: #ffffff"
+                    <Label text="Min dB/Hz:" style="-fx-text-fill: #ffffff"
                           GridPane.rowIndex="0" GridPane.columnIndex="0"/>
 
-                    <TextField fx:id="minDbInput" prefWidth="60" text="-100"
+                    <TextField fx:id="minDbInput" prefWidth="60" text="-160"
                               GridPane.rowIndex="0" GridPane.columnIndex="1"/>
 
                     <!-- Row 1: Max dB -->
-                    <Label text="Max dB:" style="-fx-text-fill: #ffffff"
+                    <Label text="Max dB/Hz:" style="-fx-text-fill: #ffffff"
                           GridPane.rowIndex="1" GridPane.columnIndex="0"/>
 
-                    <TextField fx:id="maxDbInput" prefWidth="60" text="-20" maxWidth="Infinity"
+                    <TextField fx:id="maxDbInput" prefWidth="60" text="-30" maxWidth="Infinity"
                               GridPane.rowIndex="1" GridPane.columnIndex="1"/>
 
                     <!-- Row 2: Button spanning both columns -->

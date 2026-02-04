@@ -1,9 +1,12 @@
 package net.kcundercover.spectral_analyzer.sigmf;
-
-import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonAnyGetter;
+import com.fasterxml.jackson.annotation.JsonAnySetter;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import java.util.HashMap;
+import java.util.Map;
 
-@JsonIgnoreProperties(ignoreUnknown = true)
+// @JsonIgnoreProperties(ignoreUnknown = true)
+
 public class SigMfAnnotation {
     @JsonProperty("core:sample_start") private long sampleStart;
     @JsonProperty("core:sample_count") private long sampleCount;
@@ -27,7 +30,6 @@ public class SigMfAnnotation {
         this.label = annot.label;
         this.comment = annot.comment;
     }
-
 
     /**
      * Create a clone of the
@@ -61,7 +63,26 @@ public class SigMfAnnotation {
         this.comment = comment;
     }
 
+    // --------------------------------------------------------
+    // Support custom fields
+    // --------------------------------------------------------
+    private Map<String, Object> customFields = new HashMap<>();
+
+    @JsonAnySetter
+    public void addCustomField(String name, Object value) {
+        customFields.put(name, value);
+    }
+
+    // Writes them back out during serialization
+    @JsonAnyGetter
+    public Map<String, Object> getCustomFields() {
+        // Fix EI: Wrap the internal map so it cannot be modified externally
+        return Map.copyOf(customFields);
+    }
+
+    // --------------------------------------------------------
     // Getters
+    // --------------------------------------------------------
     public long getSampleStart() {
         return sampleStart;
     }
@@ -94,8 +115,12 @@ public class SigMfAnnotation {
     public void setFreqUpperEdge(Double freq) {
         this.freqUpperEdge = freq;
     }
-
-    // In SigMfAnnotation.java, make sure this exists:
+    public void setSampleStart(Long start) {
+        this.sampleStart = start;
+    }
+    public void setSampleCount(Long count) {
+        this.sampleCount = count;
+    }
     public long sampleStart() {
         return this.sampleStart;
     }

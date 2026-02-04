@@ -15,12 +15,25 @@
         <tabs>
             <!-- Magnitude Plot-->
             <Tab text="Time Domain">
-                <StackPane fx:id="containerMagn"></StackPane>
+                <VBox spacing="5">
+                    <StackPane fx:id="containerMagn" VBox.vgrow="ALWAYS" />
+                    <Slider fx:id="alphaMagnSlider"
+                        min="0" max="1.0" value="1.0"
+                        showTickLabels="true" showTickMarks="true"
+                        majorTickUnit="0.1"  minorTickCount="10" />
+                </VBox>
             </Tab>
 
             <!-- Frequency PLot -->
             <Tab text="Frequency">
-                <StackPane fx:id="containerFreq"></StackPane>
+                <VBox spacing="5">
+                    <StackPane fx:id="containerFreq" VBox.vgrow="ALWAYS" />
+                    <Slider fx:id="alphaFreqSlider"
+                        min="0" max="1.0" value="1.0"
+                        showTickLabels="true" showTickMarks="true"
+                        majorTickUnit="0.1"  minorTickCount="100" />
+
+                </VBox>
             </Tab>
 
             <!-- PSD -->
@@ -52,8 +65,14 @@
                     <TextField fx:id="txtAnnotLabel" editable="true" GridPane.columnIndex="1" GridPane.rowIndex="0" />
 
                     <Label text="Time Span:" GridPane.columnIndex="0" GridPane.rowIndex="1" />
-                    <TextField fx:id="txtAnnotTime" editable="false" GridPane.columnIndex="1" GridPane.rowIndex="1" />
-
+                    <HBox spacing="5" alignment="CENTER_LEFT" GridPane.columnIndex="1" GridPane.rowIndex="1">
+                        <TextField fx:id="txtAnnotTime" editable="false" HBox.hgrow="ALWAYS" />
+                        <Button fx:id="btnUpdateTime" text="Update Time" onAction="#handleUpdateTimeFromMarkers">
+                            <tooltip>
+                                <Tooltip text="Update time selected magnitude/frequency charts." />
+                            </tooltip>
+                        </Button>
+                    </HBox>
                     <Label text="Freq Range:" GridPane.columnIndex="0" GridPane.rowIndex="2" />
                     <HBox spacing="5" alignment="CENTER_LEFT" GridPane.columnIndex="1" GridPane.rowIndex="2">
                         <TextField fx:id="txtAnnotFreq" editable="false" HBox.hgrow="ALWAYS" />
