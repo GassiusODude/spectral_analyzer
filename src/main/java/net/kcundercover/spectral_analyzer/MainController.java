@@ -8,9 +8,12 @@ import javafx.application.Platform;
 import javafx.beans.value.ChangeListener;
 import javafx.scene.control.Alert;
 import javafx.scene.control.Alert.AlertType;
+import javafx.scene.control.Button;
 import javafx.scene.control.ButtonType;
 import javafx.scene.control.CheckBox;
+import javafx.scene.control.CheckMenuItem;
 import javafx.scene.control.ColorPicker;
+import javafx.scene.control.ComboBox;
 import javafx.scene.control.Dialog;
 import javafx.scene.control.Slider;
 import javafx.scene.control.TextArea;
@@ -19,6 +22,7 @@ import javafx.scene.control.Tooltip;
 import javafx.scene.canvas.Canvas;
 import javafx.scene.canvas.GraphicsContext;
 import javafx.scene.control.Label;
+import javafx.scene.control.RadioMenuItem;
 import javafx.scene.control.ScrollBar;
 import javafx.scene.Cursor;
 import javafx.scene.image.PixelWriter;      // for fast drawing
@@ -30,64 +34,94 @@ import javafx.scene.layout.HBox;    // For the timeAxis container
 import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 import javafx.scene.shape.Rectangle;
+import javafx.scene.text.Font;
 import javafx.scene.paint.Color;
 import javafx.scene.Parent;
+import javafx.scene.Scene;
+import javafx.scene.shape.Line;
 import javafx.stage.FileChooser;
+import javafx.stage.Modality;
+import javafx.stage.Stage;
 import javafx.stage.Window;
-import javafx.util.Duration;
-
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
-
 import net.rgielen.fxweaver.core.FxmlView;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import net.kcundercover.spectral_analyzer.sigmf.SigMfHelper;
-import net.kcundercover.spectral_analyzer.sigmf.SigMfMetadata;
+
 import net.kcundercover.spectral_analyzer.sigmf.SigMfAnnotation;
 @Component
-@FxmlView("main-scene.fxml") // Links to the XML file above
+@FxmlView("main-scene.fxml")
 public class MainController {
-    private static final Logger logger = LoggerFactory.getLogger(MainController.class);
+    private static final Logger MC_LOGGER = LoggerFactory.getLogger(MainController.class);
 
+    // throttle updates
     private final AtomicBoolean redrawPending = new AtomicBoolean(false);
+
     private SigMfHelper sigMfHelper = new SigMfHelper();
     private long currentSampleOffset = 0; // Where we are in the file
-    private int fft_size = 1024;
-    private Path input_file;
-    // Simple helper class for coordinate tracking
-    private static class Delta { double x, y; }
+    private int fftSize;
+    private double minDecibel = -100.0;
+    private double maxDecibel = 0.0;
+
+    // track the input file path
+    private File lastOpenedDirectory;
+    private Path inputFile;
+    private long totalSamples;
+
+
+    /**
+     * Custom style for annotation based on label
+     */
     private final Map<String, Color> annotationStyles = new HashMap<>();
 
     @Autowired private SpectralService spectralService;
+    @Autowired private ExtractDownConvertService downConvertService;
 
     // ------------------------- majority of GUI  -----------------------------
     // main plot of spectrogram, overlays
     @FXML private StackPane plotContainer;
     @FXML private Canvas spectrogramCanvas;
     @FXML private Pane annotationOverlay;
+    @FXML private VBox rightPanel;
 
     // the horizontal and vertical axes
     @FXML private Pane frequencyRuler;
     @FXML private HBox timeAxis;
-    @FXML private Region axisSpacer;
+    @FXML private Pane timeLabelsContainer;
+    @FXML private Region leftAxisSpacer;
     @FXML private Region rightAxisSpacer;
     @FXML private ScrollBar fileScrollBar;
 
     // -----------------------------  controls  -------------------------------
+    // Menu
+    @FXML CheckMenuItem fastDownConverter;
+    @FXML ColorPicker selectColorPicker;
+    @FXML CheckMenuItem menuItemShowAnnotations;
+
+    // ==========================================
+    // Right Panel
+    // ==========================================
 
     // FFT control and display
     @FXML private Slider nfftSlider;
     @FXML private Label lblNfftValue;
+
+    // Annotations
+    @FXML private CheckBox showAnnotationsCheckbox;
+    @FXML private ColorPicker annotationColorPicker;
 
     // selection
     @FXML private Label lblSelectionStart;
@@ -96,44 +130,48 @@ public class MainController {
     @FXML private Label lblFreqHigh;
     @FXML private TextField selectionNameField;
     @FXML private TextArea selectionDescField;
-    @FXML private CheckBox showAnnotationsCheckbox;
-    @FXML private ColorPicker annotationColorPicker;
-
+    @FXML private Button btnAnalyzeSelection;
 
 
     /**
      * AnnotationGroup is used to track the UI {@code label} and {@code rect})
-     * and the SigMFAnnotation {@code data}.
+     * {@code tooltip} and the SigMFAnnotation {@code data}.
      *
      * {@code label} is used to show the type of annotation
-     * {@code rect} is a overlaying Rectangle to show the time/frequency position
-     * {@code data} is the Annotation information.
+     * {@code rect} is a overlaying Rectangle to visually show time/frequency position
+     * {@code data} is the SigMF Annotation information.
+     * {@code tooltip} is the comment from the annotation shown as a tooltip for the rectangle.
      */
     private static class AnnotationGroup {
         Rectangle rect;
         Label label;
         SigMfAnnotation data;
+        Tooltip tooltip;
     }
 
-    /** This mapping tracks the AnnotationGroup by the rectangle overlay */
+    /** This mapping tracks the AnnotationGroup based on the rectangle overlay */
     private final Map<Rectangle, AnnotationGroup> annotationMap = new HashMap<>();
 
-
     /**
-     * Remove the {@code rect} and the associated label from
-     * @param rect
+     * Remove the {@code rect} and the associated label/tooltip
+     * @param rect The rectangle object used as key to the {@code annotationMap}
      */
     public void removeAnnotation(Rectangle rect) {
+        // remove the entry from annotationMap
         AnnotationGroup group = annotationMap.remove(rect);
+
         if (group != null) {
-            annotationOverlay.getChildren().removeAll(
-                group.rect,
-                group.label
-            );
+            // Remote tooltips
+            if (group.tooltip != null) {
+                Tooltip.uninstall(group.rect, group.tooltip);
+            }
+
+            // remove visuals linked to the annotationOverlay panel
+            annotationOverlay.getChildren().removeAll(group.rect, group.label);
+            MC_LOGGER.info("Annotation and Tooltip removed for: {}", group.data.getLabel());
         }
     }
 
-    private Color defaultAnnotColor = Color.rgb(46, 204, 113, 1.0);
 
     // ============================================================================================
     //                                  Active Selection
@@ -144,6 +182,8 @@ public class MainController {
     private double selectionStartWidthSamples = 0; // How many samples wide it is
     private double selectionFreqLow = 0;
     private double selectionFreqHigh = 0;
+    private boolean selectionComplete = false;
+    private SigMfAnnotation selectionAnnotation;
 
 
     /**
@@ -156,8 +196,11 @@ public class MainController {
         selectionStartWidthSamples = 0; // How many samples wide it is
         selectionFreqLow = 0;
         selectionFreqHigh = 0;
+        selectionComplete = false;
 
         // NOTE: reset the UI display
+        selectionNameField.setText("Unknown");
+        selectionDescField.setText("");
         lblSelectionStart.setText("0 seconds");
         lblSelectionDur.setText("0 seconds");
         lblFreqLow.setText("No selection");
@@ -165,9 +208,11 @@ public class MainController {
 
         selectionRect.setHeight(0);
         selectionRect.setWidth(0);
-        selectionRect.setStroke(Color.rgb(255, 255, 255, 1.0));
-        selectionRect.setStrokeWidth(2);
-        selectionRect.setFill(Color.rgb(255, 255, 255, 0.3));
+        selectionRect.setStroke(selectColorPicker.getValue());
+        selectionRect.setStrokeWidth(8);
+        selectionRect.setFill(selectColorPicker.getValue()
+            .deriveColor(0, 1, 1, 0.3));
+
         selectionRect.setVisible(false);
     }
 
@@ -178,13 +223,29 @@ public class MainController {
     @FXML
     public void initialize() {
         annotationColorPicker.setValue(Color.MAGENTA);
+        selectColorPicker.setValue(Color.LIME);
+        resetSelection();
+
+        minDecibel = Double.parseDouble(minDbInput.getText());
+        maxDecibel = Double.parseDouble(maxDbInput.getText());
         // initialize selection rectangle to be hidden
         annotationOverlay.getChildren().add(selectionRect);
         selectionRect.setVisible(false);
 
+        // track the width of the right panel and update right axis spacer
+        rightPanel.widthProperty().addListener((obs, oldVal, newVal) -> {
+            double width = newVal.doubleValue();
+            rightAxisSpacer.setMinWidth(width);
+            rightAxisSpacer.setPrefWidth(width);
+            rightAxisSpacer.setMaxWidth(width);
+        });
+
         spectrogramCanvas.widthProperty().bind(plotContainer.widthProperty());
         spectrogramCanvas.heightProperty().bind(plotContainer.heightProperty());
 
+        menuItemShowAnnotations.selectedProperty().addListener((observable, oldValue, newValue) -> {
+            updateAnnotationDisplay();
+        });
         ChangeListener<Number> resizeListener = (obs, o, n) -> {
             if (redrawPending.compareAndSet(false, true)) {
                 Platform.runLater(() -> {
@@ -197,13 +258,15 @@ public class MainController {
         plotContainer.widthProperty().addListener(resizeListener);
         plotContainer.heightProperty().addListener(resizeListener);
 
+        // initialize fft by nfftSlider
+        fftSize = (int) Math.pow(2, (int) nfftSlider.getValue());
         nfftSlider.valueProperty().addListener((obs, oldVal, newVal) -> {
             // Enforce integer steps and calculate power of 2
             int exponent = newVal.intValue();
-            fft_size = (int) Math.pow(2, exponent);
+            fftSize = (int) Math.pow(2, exponent);
 
             // Update UI
-            lblNfftValue.setText(String.valueOf(fft_size));
+            lblNfftValue.setText(String.valueOf(fftSize));
 
             // Trigger re-processing
             updateDisplay();
@@ -242,6 +305,10 @@ public class MainController {
         // Annotations Overlay Mouse handlers
         // ======================================
         annotationOverlay.setOnMousePressed(e -> {
+            // reset selection (used with analyze selection)
+            selectionAnnotation = null;
+            btnAnalyzeSelection.setDisable(true);
+
             if (e.getButton() == MouseButton.SECONDARY) {
                 // NOTE: Use right click to say delete this current selection
                 resetSelection();
@@ -251,10 +318,8 @@ public class MainController {
                 resetSelection();
                 selectionX = e.getX();
                 selectionY = e.getY();
-
                 selectionRect.setX(selectionX);
                 selectionRect.setY(selectionY);
-
                 selectionRect.setVisible(true);
             }
         });
@@ -277,31 +342,39 @@ public class MainController {
                 // secondary used to remove previous selection...no need to track
             } else if (selectionRect != null) {
                 int canvasW = (int) spectrogramCanvas.getWidth();
-                this.selectionStartSample = currentSampleOffset + (long)((selectionRect.getX() / canvasW) * (canvasW * fft_size));
-
-                this.selectionStartWidthSamples = (selectionRect.getWidth() / canvasW) * (canvasW * fft_size);
                 int canvasH = (int) spectrogramCanvas.getHeight();
                 double sampleRate = sigMfHelper.getMetadata().global().sampleRate();
                 double centerFreq = sigMfHelper.getMetadata().captures().get(0).frequency();
+
+                // track the selection information
+                // --------------------------------------------------
+                this.selectionStartSample = currentSampleOffset + (long)((selectionRect.getX() / canvasW) * (canvasW * fftSize));
+                this.selectionStartWidthSamples = (selectionRect.getWidth() / canvasW) * (canvasW * fftSize);
                 selectionFreqHigh = centerFreq + sampleRate / 2 - (selectionRect.getY() / canvasH) * sampleRate;
                 selectionFreqLow = selectionFreqHigh - (selectionRect.getHeight() / canvasH * sampleRate);
+                selectionComplete = true;
 
-                selectionRect.setFill(Color.rgb(0, 120, 215, 0.3));
-                selectionRect.setStroke(Color.rgb(0, 120, 215, 1.0));
+                // set the characteristics of the selection
+                // --------------------------------------------------
+                selectionRect.setStroke(selectColorPicker.getValue());
+                selectionRect.setFill(selectColorPicker.getValue().deriveColor(0, 1, 1, 0.3));
                 selectionRect.setStrokeWidth(2);
 
-                logger.debug(
-                    "\n\tSelection Start: {} | Duration: {} | Canvas Width: {} px\n",
-                    String.format("%.3f ms", selectionStartSample / sampleRate * 1e3),
-                    String.format("%.3f ms", selectionStartWidthSamples / sampleRate * 1e3),
-                    String.format("%.1f", spectrogramCanvas.getWidth())
-                );
-
                 // update UI to display selection
+                // --------------------------------------------------
+                double startTime = (double) selectionStartSample / sampleRate;
+                String startUnit = (startTime >= 1.0) ? "s" : "ms";
+                double startValue = (startTime >= 1.0) ? startTime : startTime * 1e3;
+
+                double durTime = (double) selectionStartWidthSamples / sampleRate;
+                String durUnit = (durTime >= 1.0) ? "s" : "ms";
+                double durValue = (durTime >= 1.0) ? durTime : durTime * 1e3;
+
+
                 lblSelectionStart.setText(
-                    String.format("%.3f ms", selectionStartSample / sampleRate * 1e3));
+                    String.format("%.3f %s", startValue, startUnit));
                 lblSelectionDur.setText(
-                    String.format("%.3f ms", selectionStartWidthSamples / sampleRate * 1e3));
+                    String.format("%.3f %s", durValue, durUnit));
                 lblFreqLow.setText(String.format("%.6f MHz", selectionFreqLow / 1e6));
                 lblFreqHigh.setText(String.format("%.6f MHz", selectionFreqHigh / 1e6));
             }
@@ -319,6 +392,10 @@ public class MainController {
     @FXML
     public void handleOpen(ActionEvent event) {
         FileChooser fileChooser = new FileChooser();
+            // Set to last directory if it exists
+        if (lastOpenedDirectory != null && lastOpenedDirectory.exists()) {
+            fileChooser.setInitialDirectory(lastOpenedDirectory);
+        }
         fileChooser.setTitle("Open Signal File");
 
         // Set extension filters (useful for SDR/Audio files)
@@ -335,8 +412,9 @@ public class MainController {
         File selectedFile = fileChooser.showOpenDialog(ownerWindow);
 
         if (selectedFile != null) {
-
-            logger.info("Selected file: {}", selectedFile.getAbsolutePath());
+            // track the directory for next time this is called.
+            lastOpenedDirectory = selectedFile.getParentFile();
+            MC_LOGGER.info("Selected file: {}", selectedFile.getAbsolutePath());
 
             // Add logic here to pass the file to your JDSP processing service
             try {
@@ -349,26 +427,27 @@ public class MainController {
                 annotationMap.clear();
 
                 // track the input meta file
-                input_file = selectedFile.toPath();
-
+                inputFile = selectedFile.toPath();
+                ((Stage) ownerWindow).setTitle(
+                    String.format("Spectral Analyzer(file='%s')", inputFile.getFileName()));
                 // load annotations
                 List<SigMfAnnotation> fileAnnotations = sigMfHelper.getParsedAnnotations();
                 for (SigMfAnnotation data : fileAnnotations) {
                     // Create the "Visual Proxy"
-                    Rectangle rect = createRectangleForData(data);
+                    createRectangleForData(data);
                 }
 
                 // print information about the meta file
                 var meta = sigMfHelper.getMetadata();
                 int bytesPerSample = meta.global().getBytesPerSample();
                 long totalBytes = sigMfHelper.getDataBuffer().capacity();
-                long totalSamples = totalBytes / bytesPerSample;
+                totalSamples = totalBytes / bytesPerSample;
 
                 fileScrollBar.setMin(0);
-                fileScrollBar.setMax(totalSamples - (spectrogramCanvas.getHeight() * 1024));
+                fileScrollBar.setMax(totalSamples - (spectrogramCanvas.getHeight() * fftSize));
                 fileScrollBar.setValue(0);
 
-                logger.info(
+                MC_LOGGER.info(
                     "\n\t------- SigMF Loaded -------" +
                     "\n\tTotal bytes = {} bytes" +
                     "\n\tTotal Samples = {} samples" +
@@ -384,7 +463,7 @@ public class MainController {
 
                     fileScrollBar.setMin(0);
                     // Ensure we don't calculate a negative Max
-                    fileScrollBar.setMax(Math.max(0, totalSamples - (long)(canvasW * fft_size)));
+                    fileScrollBar.setMax(Math.max(0, totalSamples - (long)(canvasW * fftSize)));
                     fileScrollBar.setValue(0);
                     fileScrollBar.setBlockIncrement(canvasW);
                     updateDisplay();
@@ -405,18 +484,147 @@ public class MainController {
 
         List<SigMfAnnotation> sortedAnnotations = annotationMap.values().stream()
             .map(group -> group.data) // Access the field directly
-            .sorted(Comparator.comparingLong(SigMfAnnotation::sampleStart))
+            .sorted(Comparator.<SigMfAnnotation>comparingLong(SigMfAnnotation::sampleStart))
             .toList();
 
         sigMfHelper.saveSigMF(sortedAnnotations);
-        logger.info("SigMF saved: {} annotations written in chronological order.", sortedAnnotations.size());
-
+        MC_LOGGER.info("SigMF saved: {} annotations written in chronological order.", sortedAnnotations.size());
     }
 
+    @FXML TextField minDbInput;
+    @FXML TextField maxDbInput;
+
+    /**
+     * Handle change in the decibel to color mapping.
+     * @param event
+     */
+    @FXML
+    private void handleScaleUpdate(ActionEvent event) {
+        double minDb = Double.parseDouble(minDbInput.getText());
+        double maxDb = Double.parseDouble(maxDbInput.getText());
+
+        if (minDb >= maxDb) {
+            // reject bounds
+            minDbInput.setText(String.valueOf(minDecibel));
+            maxDbInput.setText(String.valueOf(maxDecibel));
+        } else {
+            // update bounds
+            minDecibel = minDb;
+            maxDecibel = maxDb;
+            updateDisplay();
+        }
+    }
+
+    /**
+     * Handle Analyze Selection Button event
+     *
+     * Open dialog for user to analyze the selection
+     * @param event Button press that triggered this handler
+     */
     @FXML
     private void handleAnalyzeSelection(ActionEvent event) {
-        logger.warn("Handle Analyze Selection has not been implemented");
+        if (!selectionComplete) {
+            showErrorAlert(
+                "Selection Incomplete",
+                "Select time/freq segment or click on annotation");
+            return;
+        }
+
+        double inputFs = sigMfHelper.getMetadata().global().sampleRate();
+        double inputFc = sigMfHelper.getMetadata().captures().get(0).frequency();
+
+        // =======================================================
+        // NOTE: Send a little exta bw and time for PSD analysis
+        // =======================================================
+        // NOTE: extend the bandwidth by 20 % (allow for improved analysis)
+        double currBw = (selectionFreqHigh - selectionFreqLow) * 1.2;
+        double center = (selectionFreqHigh + selectionFreqLow) / 2.0 - inputFc;
+
+        // NOTE: extend time by
+        long targetStart;
+        if (selectionStartSample - (long) (selectionStartWidthSamples * 0.1) < 0) {
+            targetStart = 0L;
+        } else {
+            targetStart = selectionStartSample - (long) (selectionStartWidthSamples * 0.1);
+        }
+
+        long targetWidth;
+        if (selectionStartSample + selectionStartWidthSamples * 1.1 > totalSamples) {
+            // end of file, get as
+            targetWidth = totalSamples - targetStart;
+        } else {
+            targetWidth = (long) (selectionStartWidthSamples * 1.1) + (selectionStartSample - targetStart);
+        }
+
+        int down = (int) Math.ceil(inputFs / currBw);
+
+        double targetFs = inputFs / down;
+
+        final double finalTargetFs = targetFs;
+        final double finalStartTime = targetStart / inputFs;
+        String dataType = sigMfHelper.getMetadata().global().datatype();
+
+        // Run off-thread to avoid [lication Thread] freezes
+        // ==========================================================
+        // NOTE: Runs downconverter to supply analysis dialog
+        CompletableFuture.supplyAsync(() -> downConvertService.extractAndDownConvert(
+                sigMfHelper.getDataBuffer(),
+                targetStart,
+                (int) targetWidth,
+                dataType,
+                center / inputFs,
+                down,
+                fastDownConverter.isSelected()
+        )).thenAccept(data -> {
+            // Open the new Dialog on the UI thread
+            Platform.runLater(() -> openAnalysisDialog(data, finalTargetFs, finalStartTime));
+        });
     }
+
+    /**
+     * Open the Analysis Dialog
+     *
+     * Pass the downconverted signal to the diagnosis dialog for processing.
+     * Also links the annotation to dialog for potential updates
+     * @param data Downconverted signal
+     * @param fs Sample rate of the down converted signal
+     */
+    private void openAnalysisDialog(double[][] data, double fs, double startTime) {
+        try {
+            FXMLLoader loader = new FXMLLoader(getClass().getResource("analysis-dialog.fxml"));
+            Parent root = loader.load();
+            double origSampleRate = sigMfHelper.getMetadata().global().sampleRate();
+
+            // Get the controller and "inject" the data
+            // ------------------------------------------------------
+            AnalysisDialogController controller = loader.getController();
+            controller.setAnalysisData(data, fs, origSampleRate, startTime, selectionAnnotation);
+
+            // Display
+            // ------------------------------------------------------
+            Stage stage = new Stage();
+            stage.setTitle("Signal Analysis");
+            stage.setScene(new Scene(root));
+            stage.setOnCloseRequest(event -> {
+                controller.performCleanup(); // Move your logger and data release here
+            });
+
+            stage.initModality(Modality.APPLICATION_MODAL); // Allows user to interact with both windows
+            stage.showAndWait();
+
+            // Update annotation display
+            // ------------------------------------------------------
+            selectionAnnotation.copy(controller.getUpdatedAnnotation());
+            updateRect(selectionRect, selectionAnnotation); // update rect if annotation has updated.
+
+            // NOTE: potential updates to labels/comments and frequency bounds)
+            updateAnnotationDisplay();
+
+        } catch (IOException e) {
+            MC_LOGGER.error("Failed to open Analysis Dialog", e);
+        }
+    }
+
 
     /**
      * Add an annotation based on the current user selection and UI input
@@ -424,6 +632,7 @@ public class MainController {
      */
     @FXML
     private void handleAddAnnotation(ActionEvent event) {
+        // prepare the new annotation from the selection information
         SigMfAnnotation selectAnnot = new SigMfAnnotation(
             (long) selectionStartSample,
             (long) selectionStartWidthSamples,
@@ -432,11 +641,22 @@ public class MainController {
             selectionNameField.getText(),
             selectionDescField.getText());
 
-        // NOTE: create rect/label for this annotation.
-        createRectangleForData(selectAnnot);
-
-        // clear selection
+        // reset the selection variables
         resetSelection();
+
+        MouseEvent fakeClick = new MouseEvent(
+            MouseEvent.MOUSE_CLICKED, 0, 0, 0, 0,
+            MouseButton.PRIMARY, 1,
+            false, false, false, false, // Shift, Ctrl, Alt, Meta
+            true, false, false, true,   // Primary, Middle, Secondary, Synthesized
+            false, false, null
+        );
+
+        // NOTE: create rect/label for this annotation.
+        //       trigger mouse click event for rect to "select" it
+        //       so that it can jump straight into analysis
+        Rectangle rect = createRectangleForData(selectAnnot);
+        rect.fireEvent(fakeClick);
 
         // refresh display
         updateAnnotationDisplay();
@@ -452,6 +672,9 @@ public class MainController {
         Platform.exit();
     }
 
+    /**
+     * Handle the About menu item
+     */
     @FXML
     public void handleAbout(ActionEvent event) {
         Alert alert = new Alert(AlertType.INFORMATION);
@@ -473,35 +696,61 @@ public class MainController {
     // ============================================================================================
     //                                  Helper functions
     // ============================================================================================
-
-
+    @FXML RadioMenuItem radioGrayscale;
+    @FXML ComboBox comboColorMap;
     /**
-     * Convert a double value to color
+     * Convert the double value to color value
+     *
      * @param db The double value
-     * @return
+     * @return Interpretted color
      */
     private Color getColorForMagnitude(double db) {
         // Normalize dB (assume range -100 to 0)
-        double normalized = (db + 100) / 100.0;
+        // double normalized = (db + 100) / 100.0;
+        double normalized = (db - minDecibel) / (maxDecibel - minDecibel);
         normalized = Math.clamp(normalized, 0.0, 1.0); // Java 21+ clamp
 
-        // Simple "Heat" map: Black -> Blue -> Red -> Yellow
-        if (normalized < 0.2) return Color.BLACK;
-        if (normalized < 0.5) return Color.BLUE.interpolate(Color.RED, (normalized - 0.2) / 0.3);
-        return Color.RED.interpolate(Color.YELLOW, (normalized - 0.5) / 0.5);
+        String comboChoice = (String) comboColorMap.getValue();
+        if (comboChoice == null) {
+            // if not ready...default to grayscale
+            comboChoice = "Grayscale";
+        }
+
+        // if (radioGrayscale.isSelected()) {
+        switch(comboChoice) {
+            case "Grayscale":
+                // ================  Grayscale =====================
+                // Linearly interpolate from Black (0.0) to White (1.0)
+                return Color.BLACK.interpolate(Color.WHITE, normalized);
+
+            case "Heatmap":
+                            // Simple "Heat" map: Black -> Blue -> Red -> Yellow
+                if (normalized < 0.2) {
+                    return Color.BLACK;
+                }
+                if (normalized < 0.5) {
+                    return Color.BLUE.interpolate(Color.RED, (normalized - 0.2) / 0.3);
+                }
+                return Color.RED.interpolate(Color.YELLOW, (normalized - 0.5) / 0.5);
+            default:
+                return Color.BLACK.interpolate(Color.WHITE, normalized);
+        } // end of switch
     }
 
     /**
      * Core update method to redraw GUI
      */
     public void updateDisplay() {
-        if (sigMfHelper.getDataBuffer() == null) return;
+        if (sigMfHelper.getDataBuffer() == null) {
+            return;
+        }
 
         // Get pixel width
         int canvasW = (int) spectrogramCanvas.getWidth();
-        int canvasH = (int) spectrogramCanvas.getHeight();
-        if (canvasW <= 0) return; // Wait for layout
-
+        // int canvasH = (int) spectrogramCanvas.getHeight();
+        if (canvasW <= 0) {
+            return; // Wait for layout
+        }
 
         var global = sigMfHelper.getMetadata().global();
         String dataType = global.datatype();
@@ -509,23 +758,23 @@ public class MainController {
         double sampleRate = global.sampleRate();
 
         // waterfall[Time][Frequency]
-        double[][] waterfall = new double[canvasW][fft_size];
+        double[][] waterfall = new double[canvasW][fftSize];
 
         for (int t = 0; t < canvasW; t++) {
             // t * fftSize determines how many samples per horizontal pixel
-            long sampleIndex = currentSampleOffset + ((long) t * fft_size);
+            long sampleIndex = currentSampleOffset + ((long) t * fftSize);
             int byteOffset = (int) (sampleIndex * bytesPerSample);
 
-            if (byteOffset + (fft_size * bytesPerSample) <= sigMfHelper.getDataBuffer().capacity()) {
+            if (byteOffset + (fftSize * bytesPerSample) <= sigMfHelper.getDataBuffer().capacity()) {
                 waterfall[t] = spectralService.computeMagnitudes(
                     sigMfHelper.getDataBuffer(),
                     byteOffset,
-                    fft_size,
+                    fftSize,
                     dataType
                 );
             } else {
                 // Fill with a very low dB value so the end of file is black
-                waterfall[t] = new double[fft_size];
+                waterfall[t] = new double[fftSize];
                 java.util.Arrays.fill(waterfall[t], -150.0);
             }
         }
@@ -536,7 +785,7 @@ public class MainController {
         // selection rectangle
         if (selectionRect != null) {
             double canvasWD = spectrogramCanvas.getWidth();
-            long samplesInView = (long)canvasW * fft_size;
+            long samplesInView = (long)canvasW * fftSize;
 
             // Calculate new X based on current scroll offset
             double newX = ((double)(selectionStartSample - currentSampleOffset) / samplesInView) * canvasWD;
@@ -549,35 +798,71 @@ public class MainController {
             selectionRect.setVisible(newX + newWidth > 0 && newX < canvasW);
         }
 
-        // spacer to avoid frequency axis
-        timeAxis.getChildren().retainAll(axisSpacer);
-        axisSpacer.setMinWidth(frequencyRuler.getWidth());
-        axisSpacer.setPrefWidth(frequencyRuler.getWidth());
+        timeLabelsContainer.getChildren().clear();
 
-
-        // --- Update Time Axis ---
-        // Add 5 time markers across the width
+        // --------------------------------------------------------------
+        // Create 5 equidistant points for the time axis
+        // --------------------------------------------------------------
+        double labelWidth = 60;
         for (int i = 0; i <= 4; i++) {
-            int xPixel = (canvasW / 4) * i;
-            long sampleAtPixel = currentSampleOffset + ((long) xPixel * fft_size);
+            double xPixel = (canvasW * 0.25) * i;
+            long sampleAtPixel = currentSampleOffset + ((long) (xPixel * fftSize));
             double seconds = (double) sampleAtPixel / sampleRate;
 
-            Label timeLabel = new Label(String.format(" %.3fs", seconds));
+            Line tick = new Line(xPixel, 0, xPixel, 5);
+            tick.setStroke(Color.ALICEBLUE);
+
+            Label timeLabel = new Label(String.format(" %.6fs", seconds));
+            timeLabel.setPrefWidth(labelWidth);
             timeLabel.setTextFill(Color.LIGHTGRAY);
             timeLabel.setStyle("-fx-font-family: 'Consolas'; -fx-font-size: 10px;");
-
-            // Use a Region/Spacer to push labels apart if not using absolute positioning
-            timeAxis.getChildren().add(timeLabel);
-            if (i < 4) {
-                javafx.scene.layout.Region spacer = new javafx.scene.layout.Region();
-                javafx.scene.layout.HBox.setHgrow(spacer, javafx.scene.layout.Priority.ALWAYS);
-                timeAxis.getChildren().add(spacer);
-            }
+            timeLabel.setLayoutX(xPixel - (labelWidth / 2));
+            timeLabel.setLayoutY(8); // shift text under the ticks
+            timeLabelsContainer.getChildren().addAll(tick, timeLabel);
         }
+
+        // enforce the left/right spacers match the appropriate panels
+        leftAxisSpacer.setMinWidth(frequencyRuler.getWidth());
+        rightAxisSpacer.setMinWidth(rightPanel.getWidth());
 
         updateRulers();
         renderSpectrogram(waterfall);
     }
+
+    private void updateRect(Rectangle rect, SigMfAnnotation annot) {
+        double canvasW = spectrogramCanvas.getWidth();
+        double canvasH = spectrogramCanvas.getHeight();
+        double sampleRate = sigMfHelper.getMetadata().global().sampleRate();
+        double centerFreq = sigMfHelper.getMetadata().captures().get(0).frequency();
+
+
+        long offsetInSamples = annot.getSampleStart() - currentSampleOffset;
+        double x = (double) offsetInSamples / fftSize;
+        double width = (double) annot.getSampleCount() / fftSize;
+
+        // 2. Calculate Vertical (Frequency) Position
+        // Map Frequency back to 0.0-1.0 range of the current capture bandwidth
+        double bw = sampleRate;
+        double fLowRel = (annot.getFreqLowerEdge() - (centerFreq - bw / 2)) / bw;
+        double fHighRel = (annot.getFreqUpperEdge() - (centerFreq - bw / 2)) / bw;
+        double y = (1.0 - fHighRel) * canvasH;
+        double height = (fHighRel - fLowRel) * canvasH;
+
+        // Update rectangle
+        rect.setX(x);
+        rect.setWidth(width);
+        rect.setY(y);
+        rect.setHeight(height);
+        rect.setVisible(x + width > 0 && x < canvasW);
+
+        // if (!showAnnotationsCheckbox.isSelected()) {
+        if (!menuItemShowAnnotations.isSelected()) {
+            // keep hidden
+            rect.setVisible(false);
+
+        }
+    }
+
     /**
      * Prepares a {@code Label} and a {@code Rectangle} to represent the
      * provided annotation
@@ -588,17 +873,27 @@ public class MainController {
         Rectangle rect = new Rectangle(); // Position will be set by updateDisplay()
 
         rect.setFill(annotationColorPicker.getValue());
-        rect.setStroke(defaultAnnotColor);
+        rect.setStroke(annotationColorPicker.getValue());
         rect.setStrokeWidth(2);
         rect.setCursor(Cursor.HAND);
 
         // Create the Label
         // --------------------------------------
-        Label label = new Label(cAnnot.label() != null ? cAnnot.label() : "Unnamed");
+        Label label = new Label(cAnnot.getLabel() != null ? cAnnot.getLabel() : "Unknown");
         label.setTextFill(Color.WHITE);
         label.setStyle("-fx-font-family: 'Consolas'; -fx-font-size: 11px; -fx-background-color: rgba(0,0,0,0.5);");
         label.setPadding(new Insets(2));
         label.setMouseTransparent(true); // So the label doesn't block clicking the box
+
+        // set up the tool tip
+        String tooltipText = String.format("Label: %s%nComment: %s",
+                            cAnnot.getLabel() != null ? cAnnot.getLabel() : "N/A",
+                            cAnnot.getComment() != null ? cAnnot.getComment() : "No comment");
+
+        Tooltip tooltip = new Tooltip(tooltipText);
+        tooltip.setStyle("-fx-font-family: 'Consolas'; -fx-background-color: #333; -fx-text-fill: #2ecc71;");
+        tooltip.setShowDelay(javafx.util.Duration.millis(300)); // Show quickly
+        Tooltip.install(rect, tooltip);
 
         // Store the association
         // --------------------------------------
@@ -606,21 +901,11 @@ public class MainController {
         group.rect = rect;
         group.label = label;
         group.data = cAnnot;
+        group.tooltip = tooltip;
         annotationMap.put(rect, group);
 
         annotationOverlay.getChildren().addAll(rect, label);
 
-        // set up the tool tip
-        String tooltipText = String.format("Label: %s\nComment: %s",
-                            cAnnot.label() != null ? cAnnot.label() : "N/A",
-                            cAnnot.comment() != null ? cAnnot.comment() : "No comment");
-
-        Tooltip tooltip = new Tooltip(tooltipText);
-        tooltip.setStyle("-fx-font-family: 'Consolas'; -fx-background-color: #333; -fx-text-fill: #2ecc71;");
-        tooltip.setShowDelay(javafx.util.Duration.millis(300)); // Show quickly
-        Tooltip.install(rect, tooltip);
-
-        // Add Right-Click Deletion
         rect.setOnMouseClicked(e -> {
             // do not let event bubble up to the pane
             e.consume();
@@ -630,29 +915,39 @@ public class MainController {
                 //       with the right mouse button.
                 annotationOverlay.getChildren().remove(rect);
                 removeAnnotation(rect);
+
+                // disable the selectionAnnotaiton and button for analyze selection
+                selectionAnnotation = null;
+                btnAnalyzeSelection.setDisable(true);
+
             } else {
                 // Note: update selection to point to the current annotation
                 resetSelection();
 
+                // Assign selected annotation to the one being clicked on.
+                selectionAnnotation = cAnnot;
+                btnAnalyzeSelection.setDisable(false);
+
                 // prepare current annotation for analysis
-                selectionStartSample = cAnnot.sampleStart();
-                selectionStartSample = cAnnot.sampleCount();
-                selectionFreqLow =  cAnnot.freqLowerEdge();
-                selectionFreqHigh = cAnnot.freqUpperEdge();
+                selectionStartSample = cAnnot.getSampleStart();
+                selectionStartWidthSamples = cAnnot.getSampleCount();
+                selectionFreqLow =  cAnnot.getFreqLowerEdge();
+                selectionFreqHigh = cAnnot.getFreqUpperEdge();
+
+                updateRect(selectionRect, selectionAnnotation);
                 selectionRect.setVisible(true);
 
                 //---------------  update UI  ------------------------
-                selectionNameField.setText(cAnnot.label());
-                selectionDescField.setText(cAnnot.comment());
-
+                selectionNameField.setText(cAnnot.getLabel());
+                selectionDescField.setText(cAnnot.getComment());
+                selectionComplete = true;
                 lblFreqLow.setText(
-                    String.format("%.6f MHz", cAnnot.freqLowerEdge()/1e6));
+                    String.format("%.6f MHz", cAnnot.getFreqLowerEdge() / 1e6));
                 lblFreqHigh.setText(
-                    String.format("%.6f MHz", cAnnot.freqUpperEdge()/1e6));
-                lblSelectionStart.setText(String.format("%d samples", cAnnot.sampleStart()));
-                lblSelectionDur.setText(String.format("%d samples", cAnnot.sampleCount()));
-
-
+                    String.format("%.6f MHz", cAnnot.getFreqUpperEdge() / 1e6));
+                lblSelectionStart.setText(String.format("%d samples", cAnnot.getSampleStart()));
+                lblSelectionDur.setText(String.format("%d samples", cAnnot.getSampleCount()));
+                updateDisplay();
             }
         });
         return rect;
@@ -670,56 +965,36 @@ public class MainController {
     public void updateAnnotationDisplay() {
 
         annotationMap.forEach((rect, group) -> {
-            double canvasW = spectrogramCanvas.getWidth();
-            double canvasH = spectrogramCanvas.getHeight();
-            double sampleRate = sigMfHelper.getMetadata().global().sampleRate();
-            double centerFreq = sigMfHelper.getMetadata().captures().get(0).frequency();
-
-            // 1. Calculate Horizontal (Time) Position
-            long offsetInSamples = group.data.sampleStart() - currentSampleOffset;
-            double x = (double) offsetInSamples / fft_size;
-            double width = (double) group.data.sampleCount() / fft_size;
-
-            // 2. Calculate Vertical (Frequency) Position
-            // Map Frequency back to 0.0-1.0 range of the current capture bandwidth
-            double bw = sampleRate;
-            double fLowRel = (group.data.freqLowerEdge() - (centerFreq - bw/2)) / bw;
-            double fHighRel = (group.data.freqUpperEdge() - (centerFreq - bw/2)) / bw;
-
-            // Invert for Canvas (0 is top)
-            double y = (1.0 - fHighRel) * canvasH;
-            double height = (fHighRel - fLowRel) * canvasH;
+            // update rect (x,y,width, height) based on annotation information
+            updateRect(rect, group.data);
 
             // NOTE: check for custom color provided the label for this annotation
             if (annotationStyles.containsKey(group.label.getText())) {
                 Color styleColor = annotationStyles.get(group.label.getText());
                 rect.setStroke(styleColor);
-                rect.setFill(styleColor.deriveColor(0,1,1,0.3)); // apply 0.3 alpha to the fill
+                rect.setFill(styleColor.deriveColor(0, 1, 1, 0.3)); // apply 0.3 alpha to the fill
             } else {
                 rect.setStroke(annotationColorPicker.getValue());
-                rect.setFill(annotationColorPicker.getValue().deriveColor(0,1,1,0.3)); // apply 0.3 alpha to the fill
+                rect.setFill(annotationColorPicker.getValue().deriveColor(0, 1, 1, 0.3)); // apply 0.3 alpha to the fill
             }
 
-            rect.setX(x);
-            rect.setWidth(width);
-            rect.setY(y);
-            rect.setHeight(height);
+            // update labels and comment
+            group.label.setText(group.data.getLabel());
+            group.tooltip.setText(group.data.getComment());
 
-            rect.setVisible(x + width > 0 && x < canvasW);
-
-                    // Position the label at the top-left of the rectangle
+            // Position the label at the top-left of the rectangle
             group.label.setLayoutX(rect.getX());
             group.label.setLayoutY(rect.getY() - 20); // Position slightly above the box
 
             // Match visibility
             group.label.setVisible(rect.isVisible());
 
-            if (!showAnnotationsCheckbox.isSelected()) {
-                // keep hidden
-                rect.setVisible(false);
-                group.label.setVisible(false);
-            }
         });
+    }
+
+    @FXML
+    private void handleColorMapChange(ActionEvent e) {
+        updateDisplay(); // redraw for the new color.
     }
 
     /**
@@ -743,15 +1018,24 @@ public class MainController {
 
         int canvasW = (int) spectrogramCanvas.getWidth();
         int canvasH = (int) spectrogramCanvas.getHeight();
-        int fft_size = waterfallData[0].length;
+        int fftSize = waterfallData[0].length;
+        double fs = sigMfHelper.getMetadata().global().sampleRate();
+
+        // NOTE: waterfallData uses Common Math FFT with no normalization
+        //       that scales by 1/fftSize**2
+        //       Also convert from dB/bin -> dB/Hz
+        double binBandwidth = fs / fftSize;
+        double conversion = 10 * Math.log10(binBandwidth) + 20 * Math.log10(fftSize);
 
         for (int t = 0; t < canvasW; t++) {
             for (int f = 0; f < canvasH; f++) {
                 // Map Canvas Y pixel to FFT Bin
-                // We scale the fft_size down to the canvasH
-                int fftBinIndex = (int) ((double) f / canvasH * fft_size);
+                // We scale the fftSize down to the canvasH
+                int fftBinIndex = (int) ((double) f / canvasH * fftSize);
 
-                double db = waterfallData[t][fftBinIndex];
+                // NOTE: trying to compensate so threshold is not dependent of NFFT
+                double db = waterfallData[t][fftBinIndex] - conversion;
+                // double db = waterfallData[t][fftBinIndex];
                 Color color = getColorForMagnitude(db);
 
                 // Draw time on X, Frequency on Y (inverted so low freq is bottom)
@@ -765,7 +1049,9 @@ public class MainController {
      */
     private void updateRulers() {
         frequencyRuler.getChildren().clear();
-        if (sigMfHelper.getMetadata() == null) return;
+        if (sigMfHelper.getMetadata() == null) {
+            return;
+        }
 
         var global = sigMfHelper.getMetadata().global();
         var capture = sigMfHelper.getMetadata().captures().get(0);
@@ -798,7 +1084,6 @@ public class MainController {
     }
 
 
-
     // Quick helper to show errors to the user
     private void showErrorAlert(String header, String content) {
         Alert alert = new Alert(AlertType.ERROR);
@@ -806,8 +1091,6 @@ public class MainController {
         alert.setContentText(content);
         alert.showAndWait();
     }
-
-
 
     /**
      * Show dialog to configure custom color to annotation label mappings.
@@ -841,10 +1124,38 @@ public class MainController {
             });
 
         } catch (IOException e) {
-            logger.error("Failed to open styles dialog", e);
+            MC_LOGGER.error("Failed to open styles dialog", e);
         }
     }
 
+    /**
+     * Show credits to third-party libraries
+     */
+    @FXML
+    private void handleShowCredits() {
+        try (InputStream is = getClass().getResourceAsStream(
+        "/net/kcundercover/spectral_analyzer/ThirdPartyNotices.txt")) {
 
+        // try {
+        //     // Read the file from resources
+        //     InputStream is = getClass().getResourceAsStream("/net/kcundercover/spectral_analyzer/ThirdPartyNotices.txt");
+            String content = new String(is.readAllBytes(), StandardCharsets.UTF_8);
 
+            // Display in a scrollable text area
+            TextArea textArea = new TextArea(content);
+            textArea.setEditable(false);
+            textArea.setFont(Font.font("Consolas", 12));
+            textArea.setWrapText(true);
+
+            Alert alert = new Alert(Alert.AlertType.INFORMATION);
+            alert.setTitle("Third-Party Notices");
+            alert.setHeaderText("Legal & Attribution Information");
+            alert.getDialogPane().setContent(textArea);
+            alert.setResizable(true);
+            alert.showAndWait();
+
+        } catch (Exception e) {
+            MC_LOGGER.error("Could not load credits file", e);
+        }
+    }
 }

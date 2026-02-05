@@ -4,10 +4,13 @@ plugins {
 	id 'org.springframework.boot' version '4.0.2'
 	id 'io.spring.dependency-management' version '1.1.7'
 	id 'org.openjfx.javafxplugin' version '0.1.0'
+	id "com.gradleup.shadow" version "9.3.1"
+    id 'checkstyle'
+    id 'com.github.spotbugs' version '6.0.26' // Third-party plugin
 }
 
 group = 'net.kcundercover'
-version = '0.0.1-SNAPSHOT'
+version = '0.1.0'
 description = 'Demo project for Spring Boot'
 
 java {
@@ -20,19 +23,103 @@ javafx {
     modules = [ 'javafx.controls', 'javafx.fxml' ]
 }
 
+// ============================================================================
+// 									bootJar
+// ============================================================================
+// NOTE: Set up bootJar to support the Spring boot JavaFX application
+bootJar {
+    archiveClassifier = 'boot' // Distinguishes it from the plain jar
+    manifest {
+        attributes(
+            "Implementation-Title": "Spectral Analyzer",
+            "Implementation-Version": project.version,
+            "Build-Timestamp": new java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSZ").format(new Date())
+        )
+    }
+
+    // Include your licenses in the BOOT-INF/classes/META-INF folder
+    from("${project.rootDir}") {
+        include "LICENSE"
+
+		// EJML, Apache Common Math, Jackson, Spring Framwork/Boot
+        include "APACHE_LICENSE-2.0.txt"
+
+		// JFreeChart and JFreeChart-FX
+		include "JFREECHART_LICENSE-LGPL.txt"
+
+        into "META-INF"
+    }
+}
+
+// shadowJar {
+//     manifest {
+//         attributes(
+//             "Implementation-Title": "Spectral Analyzer",
+//             "Implementation-Version": project.version, // Essential for Python verification
+//             "Build-Timestamp": new java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSZ").format(new Date())
+//         )
+//     }
+
+//     // handle licenses
+//     from("${project.rootDir}") {
+//         include "LICENSE"
+
+// 		// EJML, Apache Common Math, Jackson, Spring Framwork/Boot
+//         include "APACHE_LICENSE-2.0.txt"
+
+// 		// JFreeChart and JFreeChart-FX
+// 		include "JFREECHART_LICENSE-LGPL.txt"
+
+//         into "META-INF"
+//     }
+
+//     // prevent overwriting multiple license and notice files
+//     append 'META-INF/LICENSE'
+//     append 'META-INF/NOTICE'
+
+//     mergeServiceFiles()
+// }
+
 configurations {
 	compileOnly {
 		extendsFrom annotationProcessor
 	}
 }
 
+
+// ============================================================================
+// 					Specify dependencies and repositories
+// ============================================================================
 repositories {
-	mavenCentral()
+	// Use local maven repo if available (for JDSP dependency)
+	mavenLocal()
+
+	// If no local, then pull from repo (Github CI)
+    // maven {
+    //     url 'https://maven.pkg.github.com/GassiusODude/jdsp'
+    //     credentials {
+    //         username = project.findProperty("gpr.user") ?: System.getenv("USERNAME")
+    //         password = project.findProperty("gpr.token") ?: System.getenv("TOKEN")
+    //     }
+    // }
+
+    mavenCentral()
+
+	// Jitpack.io
+	maven { url 'https://jitpack.io'}
 }
 
 dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter-webmvc'
 	implementation 'net.rgielen:javafx-weaver-spring-boot-starter:2.0.1'
+
+	// Fast plotting library
+    implementation 'org.jfree:jfreechart:1.5.4'
+    implementation 'org.jfree:org.jfree.chart.fx:2.0.1'
+
+	// JDSP (resampling, PSD)
+	// implementation 'net.kcundercover:jdsp:1.3'
+	implementation 'com.github.GassiusODude:jdsp:v1.3'		// pulling with jitpack.io
 
 	// Jackson (JSON support to read SigMF Meta)
 	implementation 'com.fasterxml.jackson.core:jackson-databind'
@@ -47,8 +134,24 @@ dependencies {
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 
+
 application {
     mainClass = 'net.kcundercover.spectral_analyzer.MainApp'
+}
+
+// Optional: Configure them to show HTML reports
+checkstyle {
+    toolVersion = "10.12.5"
+    ignoreFailures = false
+	showViolations = true
+	configProperties = [
+        'org.checkstyle.google.severity': 'warning',
+        'org.checkstyle.google.suppressionfilter.config': "${project.rootDir}/config/checkstyle/checkstyle-suppressions.xml"
+    ]
+}
+
+spotbugs {
+    toolVersion = '4.8.3'
 }
 
 tasks.named('test') {
