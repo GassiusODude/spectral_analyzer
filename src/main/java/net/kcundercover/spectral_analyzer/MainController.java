@@ -18,6 +18,7 @@ import javafx.scene.control.Dialog;
 import javafx.scene.control.Slider;
 import javafx.scene.control.TextArea;
 import javafx.scene.control.TextField;
+import javafx.scene.control.TextInputDialog;
 import javafx.scene.control.Tooltip;
 import javafx.scene.canvas.Canvas;
 import javafx.scene.canvas.GraphicsContext;
@@ -46,12 +47,14 @@ import javafx.stage.Window;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.URI;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import net.rgielen.fxweaver.core.FxmlView;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
@@ -59,14 +62,14 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
+import net.kcundercover.spectral_analyzer.rest.RestHelper;
 import net.kcundercover.spectral_analyzer.sigmf.SigMfHelper;
-
 import net.kcundercover.spectral_analyzer.sigmf.SigMfAnnotation;
 @Component
 @FxmlView("main-scene.fxml")
 public class MainController {
     private static final Logger MC_LOGGER = LoggerFactory.getLogger(MainController.class);
-
+    private RestHelper restHelper = new RestHelper();
     // throttle updates
     private final AtomicBoolean redrawPending = new AtomicBoolean(false);
 
@@ -489,6 +492,35 @@ public class MainController {
 
         sigMfHelper.saveSigMF(sortedAnnotations);
         MC_LOGGER.info("SigMF saved: {} annotations written in chronological order.", sortedAnnotations.size());
+    }
+
+    @FXML
+    private void handleConnect(ActionEvent e) {
+        // connect to a REST server.
+        TextInputDialog dialog = new TextInputDialog("http://localhost:8080/v3/api-docs");
+        dialog.setTitle("Connect to REST Service");
+        dialog.setHeaderText("Enter OpenAPI Schema URL");
+        dialog.setContentText("Schema URL:");
+
+        // 2. Show and Wait for result
+        Optional<String> result = dialog.showAndWait();
+
+        result.ifPresent(url -> {
+        try {
+            // Basic validation check
+            URI.create(url);
+
+            // Call your discovery method (should be run on a background thread)
+            System.out.println("Attempting to connect to: " + url);
+            restHelper.discover(url);
+
+        } catch (IllegalArgumentException iae) {
+            showErrorAlert("Invalid URL", "The address provided is not a valid URL.");
+        } catch (Exception ex) {
+            showErrorAlert("Invalid URL",  ex.toString());
+        }
+
+    });
     }
 
     @FXML TextField minDbInput;

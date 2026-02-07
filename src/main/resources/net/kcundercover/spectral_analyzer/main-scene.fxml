@@ -35,6 +35,11 @@
               <MenuItem text="Exit" onAction="#handleExit" />
             </items>
           </Menu>
+           <Menu text="Capabilities">
+            <items>
+              <MenuItem text="Connect to REST Server..." onAction="#handleConnect" />
+            </items>
+          </Menu>
           <Menu text="Preferences">
             <items>
               <CustomMenuItem hideOnClick="false">
