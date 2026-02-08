@@ -4,7 +4,6 @@ import java.util.HashMap;
 import java.util.Map;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
-import java.io.IOException;
 import java.net.URI;
 import javafx.scene.layout.GridPane;
 // import javafx.scene.control.*;
@@ -27,52 +26,79 @@ import javafx.application.Platform;
 public class RestHelper {
     private static final Logger RH_LOGGER = LoggerFactory.getLogger(RestHelper.class);
 
-    Map<String, JsonNode> capabilities = new HashMap<>();
+    Map<String, Capability> capabilities = new HashMap<>();
 
     /**
      * Discover capabilities
+     *
+     * Access a REST API's schema
      * @param schemaUrl The path to JSON describing schema used
      */
     public void discover(String schemaUrl) throws Exception {
         ObjectMapper mapper = new ObjectMapper();
         try {
-            // --------------------  connect and request schema  ------------------
             HttpClient client = HttpClient.newHttpClient();
-            HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(schemaUrl))
-                .build();
-
+            HttpRequest request = HttpRequest.newBuilder().uri(URI.create(schemaUrl)).build();
             String jsonString = client.send(request, HttpResponse.BodyHandlers.ofString()).body();
-
-            // Parse the string
             JsonNode root = mapper.readTree(jsonString);
 
-            // Find all POST endpoints (our "capabilities")
+            // Default to the schemaUrl's origin if servers are missing
+            String baseUrl = "";
+            if (root.has("servers") && root.get("servers").isArray() && root.get("servers").size() > 0) {
+                // access 'servers' field if provided
+                baseUrl = root.get("servers").get(0).get("url").asText();
+            } else {
+                // parse based on <HOST>:<PORT>
+                URI uri = new URI(schemaUrl);
+                baseUrl = uri.getScheme() + "://" + uri.getHost() + (uri.getPort() != -1 ? ":" + uri.getPort() : "");
+            }
+
+            String finalBaseUrl = baseUrl;
+            String[] supported = {"get", "post", "put", "delete"};
+
             root.path("paths").properties().forEach(entry -> {
                 String path = entry.getKey();
-                if (entry.getValue().has("get")) {
-                    capabilities.put(path, entry.getValue().get("get"));
-                    RH_LOGGER.info("New capability found: " + path);
-                } else if (entry.getValue().has("post")) {
-                    capabilities.put(path, entry.getValue().get("post"));
-                    RH_LOGGER.info("New capability found: " + path);
+                JsonNode pathNode = entry.getValue();
+
+                for (String currMethod : supported) {
+                    if (pathNode.has(currMethod)) {
+                        HttpMethod httpMethod = HttpMethod.fromString(currMethod);
+                        JsonNode operation = pathNode.get(currMethod);
+
+                        if (httpMethod != null && operation != null) {
+                            JsonNode requestBody = operation.path("requestBody").path("content").path("application/json").path("schema");
+                            if (requestBody.has("$ref")) {
+
+                                String refPath = requestBody.get("$ref").asText(); // e.g., "#/components/schemas/ClusterRequest"
+                                String schemaName = refPath.substring(refPath.lastIndexOf('/') + 1);
+
+                                // Look up the actual properties in the components section
+                                JsonNode actualSchema = root.path("components").path("schemas").path(schemaName);
+                                capabilities.put(path, new Capability(finalBaseUrl, httpMethod, operation, actualSchema));
+                                RH_LOGGER.info("Capability discovered: [" + finalBaseUrl + "] " + path);
+                            } else {
+                                capabilities.put(path, new Capability(finalBaseUrl, httpMethod, operation, null));
+                                RH_LOGGER.info("Capability discovered: [" + finalBaseUrl + "] " + path);
+                            }
+                        }
+                        break; // Only take the first found method for this path
+                    }
                 }
             });
 
-        } catch (IllegalArgumentException e) {
-            // Triggered if the string isn't a valid URI (e.g., "not a link")
-            showError("Invalid URL format", "Please check the address and try again.");
-        } catch (IOException e) {
-            // Triggered if server is down, 404, or network is disconnected
-            showError("Connection Failed", "Could not reach the server. Is it running?");
         } catch (Exception e) {
-            // Catch-all for unexpected issues
-            showError("Unexpected Error", e.getMessage());
+            showError("Discovery Error", e.getMessage());
         }
-
     }
 
     public void executeCapability(String path, Map<String, Object> userInputs) {
+        Capability cap = capabilities.get(path);
+        if (cap == null) {
+            return;
+        }
+
+        String fullUri = cap.getBaseUrl() + path;
+
         ObjectMapper mapper = new ObjectMapper();
         ObjectNode body = mapper.createObjectNode();
 
@@ -88,19 +114,36 @@ public class RestHelper {
             }
         });
 
-        // Send via standard POST...
-        // client.sendAsync(request, HttpResponse.BodyHandlers.ofString())
-        //     .thenApply(response -> {
-        //         try {
-        //             return mapper.readTree(response.body());
-        //         } catch (Exception e) { return null; }
-        //     })
-        //     .thenAccept(jsonResponse -> {
-        //         // Update JavaFX UI Label/Table with whatever keys came back
-        //         Platform.runLater(() -> {
-        //             uiTextArea.setText(jsonResponse.toPrettyString());
-        //         });
-        //     });
+        try {
+            // 2. Initialize Client and Build Request
+            HttpClient client = HttpClient.newHttpClient();
+            HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(fullUri + path))
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(body.toString()))
+                .build();
+
+            // 3. Execute Async
+            client.sendAsync(request, HttpResponse.BodyHandlers.ofString())
+                .thenApply(HttpResponse::body)
+                .thenAccept(jsonString -> {
+                    Platform.runLater(() -> {
+                        try {
+                            JsonNode jsonResponse = mapper.readTree(jsonString);
+                            RH_LOGGER.info("Response = " + jsonResponse.toPrettyString());
+                        } catch (Exception e) {
+                            RH_LOGGER.info("Error parsing response: " + jsonString);
+                        }
+                    });
+                })
+                .exceptionally(ex -> {
+                    Platform.runLater(() -> showError("Request Failed", ex.getMessage()));
+                    return null;
+                });
+
+        } catch (Exception e) {
+            showError("Setup Error", e.getMessage());
+        }
 
     }
 
