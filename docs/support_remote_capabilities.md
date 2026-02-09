@@ -4,13 +4,25 @@
 
 ~~~mermaid
 sequenceDiagram
-
+actor user
 participant client
 participant server
 
+
 opt Discover Capability
+    user ->> client: Add server
     client ->> server: "Request API"
     server ->> client: "Response JSON"
+end
+opt configure capability
+    note over user,client: Map UI info to request fields
+end
+opt Execute Capability
+    user ->> client : Execute capability
+    client ->> server : Send request
+    server ->> client : Send Response
+end
+
 ~~~
 
 ## REST API

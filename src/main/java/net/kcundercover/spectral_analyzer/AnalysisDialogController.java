@@ -10,6 +10,7 @@ import javafx.scene.layout.StackPane;
 import javafx.scene.Node;
 
 import javafx.stage.Stage;
+import java.awt.BasicStroke;
 import org.jfree.chart.fx.interaction.ChartMouseEventFX;
 import org.jfree.chart.fx.interaction.ChartMouseListenerFX;
 import org.jfree.chart.plot.ValueMarker;
@@ -305,6 +306,10 @@ public class AnalysisDialogController {
                 data, sampleRate, psdNfft);
         }
 
+        ValueAxis yAxis = viewPSD.getChart().getXYPlot().getRangeAxis();
+        ((NumberAxis) yAxis).setAutoRangeIncludesZero(false);
+        ((NumberAxis) yAxis).setAutoRange(true);
+
         // FIXME: (not working)
         //        Attempt to compare against threshold used in spectrogram)
         // offset = 10 * Math.log10(sampleRate / freqAndPsd[0].length);
@@ -590,6 +595,7 @@ public class AnalysisDialogController {
         ValueMarker marker = new ValueMarker(x);
         marker.setPaint(color);
         marker.setLabel(label);
+        marker.setStroke(new BasicStroke(2));
         plot.addDomainMarker(marker);
     }
 

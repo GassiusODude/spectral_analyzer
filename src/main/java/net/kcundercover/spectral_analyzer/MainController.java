@@ -9,11 +9,14 @@ import javafx.beans.value.ChangeListener;
 import javafx.scene.control.Alert;
 import javafx.scene.control.Alert.AlertType;
 import javafx.scene.control.Button;
+
 import javafx.scene.control.ButtonType;
 import javafx.scene.control.CheckBox;
 import javafx.scene.control.CheckMenuItem;
+import javafx.scene.control.ChoiceDialog;
 import javafx.scene.control.ColorPicker;
 import javafx.scene.control.ComboBox;
+
 import javafx.scene.control.Dialog;
 import javafx.scene.control.Slider;
 import javafx.scene.control.TextArea;
@@ -29,8 +32,10 @@ import javafx.scene.Cursor;
 import javafx.scene.image.PixelWriter;      // for fast drawing
 import javafx.scene.input.MouseButton;
 import javafx.scene.input.MouseEvent;
+import javafx.scene.Node;
 import javafx.scene.layout.Pane;
 import javafx.scene.layout.StackPane;
+
 import javafx.scene.layout.HBox;    // For the timeAxis container
 import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
@@ -56,12 +61,14 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import net.rgielen.fxweaver.core.FxmlView;
+
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
+import net.kcundercover.spectral_analyzer.rest.Capability;
 import net.kcundercover.spectral_analyzer.rest.RestHelper;
 import net.kcundercover.spectral_analyzer.sigmf.SigMfHelper;
 import net.kcundercover.spectral_analyzer.sigmf.SigMfAnnotation;
@@ -228,6 +235,12 @@ public class MainController {
         annotationColorPicker.setValue(Color.MAGENTA);
         selectColorPicker.setValue(Color.LIME);
         resetSelection();
+
+        comboColorMap.valueProperty().addListener((observable, oldValue, newValue) -> {
+            if (newValue != null) {
+                updateDisplay();
+            }
+        });
 
         minDecibel = Double.parseDouble(minDbInput.getText());
         maxDecibel = Double.parseDouble(maxDbInput.getText());
@@ -494,35 +507,6 @@ public class MainController {
         MC_LOGGER.info("SigMF saved: {} annotations written in chronological order.", sortedAnnotations.size());
     }
 
-    @FXML
-    private void handleConnect(ActionEvent e) {
-        // connect to a REST server.
-        TextInputDialog dialog = new TextInputDialog("http://localhost:8080/v3/api-docs");
-        dialog.setTitle("Connect to REST Service");
-        dialog.setHeaderText("Enter OpenAPI Schema URL");
-        dialog.setContentText("Schema URL:");
-
-        // 2. Show and Wait for result
-        Optional<String> result = dialog.showAndWait();
-
-        result.ifPresent(url -> {
-        try {
-            // Basic validation check
-            URI.create(url);
-
-            // Call your discovery method (should be run on a background thread)
-            System.out.println("Attempting to connect to: " + url);
-            restHelper.discover(url);
-
-        } catch (IllegalArgumentException iae) {
-            showErrorAlert("Invalid URL", "The address provided is not a valid URL.");
-        } catch (Exception ex) {
-            showErrorAlert("Invalid URL",  ex.toString());
-        }
-
-    });
-    }
-
     @FXML TextField minDbInput;
     @FXML TextField maxDbInput;
 
@@ -595,7 +579,8 @@ public class MainController {
         final double finalTargetFs = targetFs;
         final double finalStartTime = targetStart / inputFs;
         String dataType = sigMfHelper.getMetadata().global().datatype();
-
+        Window owner = ((Node) event.getSource())
+                .getScene().getWindow();
         // Run off-thread to avoid [lication Thread] freezes
         // ==========================================================
         // NOTE: Runs downconverter to supply analysis dialog
@@ -609,7 +594,7 @@ public class MainController {
                 fastDownConverter.isSelected()
         )).thenAccept(data -> {
             // Open the new Dialog on the UI thread
-            Platform.runLater(() -> openAnalysisDialog(data, finalTargetFs, finalStartTime));
+            Platform.runLater(() -> openAnalysisDialog(owner, data, finalTargetFs, finalStartTime));
         });
     }
 
@@ -621,7 +606,7 @@ public class MainController {
      * @param data Downconverted signal
      * @param fs Sample rate of the down converted signal
      */
-    private void openAnalysisDialog(double[][] data, double fs, double startTime) {
+    private void openAnalysisDialog(Window owner, double[][] data, double fs, double startTime) {
         try {
             FXMLLoader loader = new FXMLLoader(getClass().getResource("analysis-dialog.fxml"));
             Parent root = loader.load();
@@ -635,7 +620,7 @@ public class MainController {
             // Display
             // ------------------------------------------------------
             Stage stage = new Stage();
-            stage.setTitle("Signal Analysis");
+            stage.initOwner(owner);
             stage.setScene(new Scene(root));
             stage.setOnCloseRequest(event -> {
                 controller.performCleanup(); // Move your logger and data release here
@@ -709,9 +694,14 @@ public class MainController {
      */
     @FXML
     public void handleAbout(ActionEvent event) {
+        Window owner = ((javafx.scene.control.MenuItem) event.getSource())
+            .getParentPopup().getOwnerWindow();
+
         Alert alert = new Alert(AlertType.INFORMATION);
+        alert.initOwner(owner);
+        alert.initModality(Modality.APPLICATION_MODAL);
         alert.setTitle("About Spectral Analyzer");
-        alert.setHeaderText("Spectral Analyzer v0.0.1");
+        alert.setHeaderText("Spectral Analyzer v0.1");
         alert.setContentText(
             "A JavaFX & Spring Boot application for signal processing.\n" +
             "Domain: net.kcundercover");
@@ -729,7 +719,7 @@ public class MainController {
     //                                  Helper functions
     // ============================================================================================
     @FXML RadioMenuItem radioGrayscale;
-    @FXML ComboBox comboColorMap;
+    @FXML ComboBox<String> comboColorMap;
     /**
      * Convert the double value to color value
      *
@@ -1034,7 +1024,39 @@ public class MainController {
      */
     @FXML
     private void handleOpenColorDialog(ActionEvent event) {
-        showAnnotationStyleDialog();
+        try {
+            // Use your FxWeaver or FXMLLoader as before
+            FXMLLoader loader = new FXMLLoader(getClass().getResource("annotation-style-dialog.fxml"));
+            Parent content = loader.load();
+
+            AnnotationStyleDialogController controller = loader.getController();
+
+            // Pass the CURRENT map to the controller to populate its TableView
+            controller.setStyles(annotationStyles);
+
+            Dialog<Map<String, Color>> dialog = new Dialog<>();
+            Window owner = ((javafx.scene.control.MenuItem) event.getSource())
+                .getParentPopup().getOwnerWindow();
+            dialog.initOwner(owner);
+            dialog.initModality(Modality.WINDOW_MODAL);
+            dialog.setTitle("Custom Annotation Styles");
+            dialog.getDialogPane().setContent(content);
+            // ... (title and button types)
+            // This creates the physical buttons at the bottom of the dialog
+            dialog.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
+
+            // When the user clicks OK, grab the updated map from the controller
+            dialog.setResultConverter(bt -> bt == ButtonType.OK ? controller.getUpdatedStyles() : null);
+
+            dialog.showAndWait().ifPresent(updatedMap -> {
+                this.annotationStyles.clear();
+                this.annotationStyles.putAll(updatedMap);
+                updateDisplay(); // Redraw canvas with new colors
+            });
+
+        } catch (IOException e) {
+            MC_LOGGER.error("Failed to open styles dialog", e);
+        }
     }
 
      /**
@@ -1125,53 +1147,15 @@ public class MainController {
     }
 
     /**
-     * Show dialog to configure custom color to annotation label mappings.
-     * This is used to apply different color schemes based on the
-     * annotation id.
-     */
-    public void showAnnotationStyleDialog() {
-        try {
-            // Use your FxWeaver or FXMLLoader as before
-            FXMLLoader loader = new FXMLLoader(getClass().getResource("annotation-style-dialog.fxml"));
-            Parent content = loader.load();
-
-            AnnotationStyleDialogController controller = loader.getController();
-
-            // Pass the CURRENT map to the controller to populate its TableView
-            controller.setStyles(annotationStyles);
-
-            Dialog<Map<String, Color>> dialog = new Dialog<>();
-            dialog.getDialogPane().setContent(content);
-            // ... (title and button types)
-            // This creates the physical buttons at the bottom of the dialog
-            dialog.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
-
-            // When the user clicks OK, grab the updated map from the controller
-            dialog.setResultConverter(bt -> bt == ButtonType.OK ? controller.getUpdatedStyles() : null);
-
-            dialog.showAndWait().ifPresent(updatedMap -> {
-                this.annotationStyles.clear();
-                this.annotationStyles.putAll(updatedMap);
-                updateDisplay(); // Redraw canvas with new colors
-            });
-
-        } catch (IOException e) {
-            MC_LOGGER.error("Failed to open styles dialog", e);
-        }
-    }
-
-    /**
      * Show credits to third-party libraries
      */
     @FXML
-    private void handleShowCredits() {
+    private void handleShowCredits(ActionEvent event) {
         try (InputStream is = getClass().getResourceAsStream(
         "/net/kcundercover/spectral_analyzer/ThirdPartyNotices.txt")) {
 
-        // try {
-        //     // Read the file from resources
-        //     InputStream is = getClass().getResourceAsStream("/net/kcundercover/spectral_analyzer/ThirdPartyNotices.txt");
             String content = new String(is.readAllBytes(), StandardCharsets.UTF_8);
+
 
             // Display in a scrollable text area
             TextArea textArea = new TextArea(content);
@@ -1180,6 +1164,10 @@ public class MainController {
             textArea.setWrapText(true);
 
             Alert alert = new Alert(Alert.AlertType.INFORMATION);
+            Window owner = ((javafx.scene.control.MenuItem) event.getSource())
+                .getParentPopup().getOwnerWindow();
+            alert.initOwner(owner);
+            alert.initModality(Modality.APPLICATION_MODAL);
             alert.setTitle("Third-Party Notices");
             alert.setHeaderText("Legal & Attribution Information");
             alert.getDialogPane().setContent(textArea);
@@ -1190,4 +1178,70 @@ public class MainController {
             MC_LOGGER.error("Could not load credits file", e);
         }
     }
+
+    // ============================================================================================
+    // REST API Capabilities
+    // ============================================================================================
+
+    @FXML
+    private void handleConnect(ActionEvent event) {
+        Window owner = ((javafx.scene.control.MenuItem) event.getSource())
+            .getParentPopup().getOwnerWindow();
+        // connect to a REST server.
+        TextInputDialog dialog = new TextInputDialog("http://localhost:8000/openapi.json");
+        dialog.initOwner(owner);
+        dialog.initModality(Modality.WINDOW_MODAL);
+        dialog.setTitle("Connect to REST Service");
+        dialog.setHeaderText("Enter OpenAPI Schema URL");
+        dialog.setContentText("Schema URL:");
+        Optional<String> result = dialog.showAndWait();
+
+        result.ifPresent(url -> {
+            try {
+                // Basic validation check
+                URI.create(url);
+
+                // Call your discovery method (should be run on a background thread)
+                MC_LOGGER.info("Attempting to connect to: " + url);
+                restHelper.discover(url);
+
+            } catch (IllegalArgumentException iae) {
+                showErrorAlert("Invalid URL", "The address provided is not a valid URL.");
+            } catch (Exception ex) {
+                showErrorAlert("Invalid URL",  ex.toString());
+            }
+
+        });
+    }
+
+
+    /**
+     * Show dialog box for user to select the capability from a choice
+     * @param event ActionEvent that trigger this (MenuItem)
+     */
+    @FXML
+    private void showChooseCapability(ActionEvent event) {
+        Window owner = ((javafx.scene.control.MenuItem) event.getSource())
+                                .getParentPopup().getOwnerWindow();
+
+        ChoiceDialog<String> dialog = new ChoiceDialog<>();
+        dialog.setTitle("Select Capability");
+
+        // NOTE: tie to parent window (so centers dialog)
+        dialog.initOwner(owner);
+        dialog.initModality(Modality.WINDOW_MODAL);
+
+        dialog.setHeaderText("Choose an API endpoint to execute:");
+        dialog.setContentText("Capability:");
+
+        // Fill the ComboBox with the paths from your map
+        dialog.getItems().addAll(restHelper.getCapabilityPaths());
+
+        dialog.showAndWait().ifPresent(selectedPath -> {
+            // Retrieve the capability metadata we stored earlier
+            Capability cap = restHelper.getCapability(selectedPath);
+            restHelper.showCapabilityDialog(owner, cap);
+        });
+    }
+
 }
