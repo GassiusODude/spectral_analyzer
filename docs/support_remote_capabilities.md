@@ -1,6 +1,8 @@
 # Support Remote Capabilities
 
-* Point to the REST API
+Rather than support every possible use-case, it would be very useful to access custom services through REST or gRPC.  This allows developers to only expose the API for developers/users to access their capabilities.
+
+## REST API
 
 ~~~mermaid
 sequenceDiagram
@@ -22,10 +24,7 @@ opt Execute Capability
     client ->> server : Send request
     server ->> client : Send Response
 end
-
 ~~~
-
-## REST API
 
 The REST API can be obtained through a JSON configuration.  The configuration location is different based on the framework.
 
@@ -45,6 +44,20 @@ The REST API can be obtained through a JSON configuration.  The configuration lo
 | `paths` |
 | `components` | data objects used in `paths` | x | x |
 
+### REST Limitations
+
+Within this application, it makes sense to extract some features to pass to REST services.  This can be performed through GET.
+
+One concern is the size of the input data.  Passing high sample rate IQ data for more complex analysis will be expensive.
+
+* `Max Request Body`
+  * In Spring Boot, there is a 10MB or 25 MB limit to the request body
+* Passing IQ (double[][])
+  * Comma Separated Values - Uses textual representation per double.
+    * With high precision there can be 300 % increase in representation size.
+    * Truncated precision can be used to reduce bandwidth but at the cost of signal integrity.
+  * Base64 Encoding - Increase bytewise size by 33 %.
+
 ### Paths
 
 | Types | Description |
@@ -54,7 +67,23 @@ The REST API can be obtained through a JSON configuration.  The configuration lo
 | POST | Create, allows client to push data in the request body instead of the URL. |
 | PUT/PATCH | Update a resource |
 
-## Dynamic Object
+### Dynamic Object
+
+This follows from [Example Spring Boot Post](./example_springboot_post.json).
+
+
+~~~mermaid
+classDiagram
+class ClusterRequest {
+    numStates : int
+    features : int
+    observations : double[][]
+}
+class ClusterResponse {
+    clusters : int
+    labels : int[]
+}
+~~~
 
 ~~~java
     import com.fasterxml.jackson.databind.ObjectMapper;
@@ -71,6 +100,35 @@ The REST API can be obtained through a JSON configuration.  The configuration lo
         .addArray().add(5.6).add(7.8);
 
     String jsonString = mapper.writeValueAsString(root);
-    // Now send this jsonString via POST...
+~~~
 
+## gRPC
+
+gRPC remote procedure call has a tight contract of the data structures and service signatures.
+
+* ServerReflection can support dynamic discovery.
+
+~~~protobuf
+service IQSignalService {
+  // Mode 1: Returns a single classification (e.g., "WiFi", "LTE")
+  rpc ClassifySignal (IQBatch) returns (ClassificationLabel);
+
+  // Mode 2: Returns a list of discrete events/signals detected in the batch
+  rpc DetectEvents (IQBatch) returns (DetectionList);
+}
+
+message ClassificationLabel {
+  string label = 1;
+  float confidence = 2;
+}
+
+message DetectionList {
+  repeated Detection detections = 1;
+}
+
+message Detection {
+  double start_time = 1;
+  double frequency_center = 2;
+  string signal_type = 3;
+}
 ~~~

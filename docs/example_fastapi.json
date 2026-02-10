@@ -1,0 +1,136 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "RF Standard Service",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/identify": {
+      "get": {
+        "summary": "Identify",
+        "operationId": "identify_identify_get",
+        "parameters": [
+          {
+            "name": "bandwidth",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "title": "Bandwidth"
+            }
+          },
+          {
+            "name": "frequency",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "title": "Frequency"
+            }
+          },
+          {
+            "name": "duration",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "title": "Duration"
+            }
+          },
+          {
+            "name": "tolerance",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "number",
+              "default": 0.01,
+              "title": "Tolerance"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    }
+  }
+}
