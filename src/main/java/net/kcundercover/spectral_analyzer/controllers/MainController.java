@@ -68,12 +68,16 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
+
+import net.kcundercover.spectral_analyzer.data.IqData;
 import net.kcundercover.spectral_analyzer.rest.Capability;
 import net.kcundercover.spectral_analyzer.rest.RestHelper;
 import net.kcundercover.spectral_analyzer.sigmf.SigMfHelper;
 import net.kcundercover.spectral_analyzer.sigmf.SigMfAnnotation;
+import net.kcundercover.spectral_analyzer.services.AsyncExtractDownConvertService;
 import net.kcundercover.spectral_analyzer.services.ExtractDownConvertService;
 import net.kcundercover.spectral_analyzer.services.SpectralService;
+
 
 @Component
 @FxmlView("main-scene.fxml")
@@ -102,6 +106,7 @@ public class MainController {
 
     @Autowired private SpectralService spectralService;
     @Autowired private ExtractDownConvertService downConvertService;
+    @Autowired private AsyncExtractDownConvertService asyncDownConvertService;
 
     // ------------------------- majority of GUI  -----------------------------
     // main plot of spectrogram, overlays
@@ -1224,27 +1229,67 @@ public class MainController {
      */
     @FXML
     private void showChooseCapability(ActionEvent event) {
-        Window owner = ((javafx.scene.control.MenuItem) event.getSource())
-                                .getParentPopup().getOwnerWindow();
+        if (!selectionComplete) {
+            showErrorAlert(
+                "Selection Incomplete",
+                "Select time/freq segment or click on annotation");
+            return;
+        }
 
-        ChoiceDialog<String> dialog = new ChoiceDialog<>();
-        dialog.setTitle("Select Capability");
+        double inputFs = sigMfHelper.getMetadata().global().sampleRate();
+        double inputFc = sigMfHelper.getMetadata().captures().get(0).frequency();
 
-        // NOTE: tie to parent window (so centers dialog)
-        dialog.initOwner(owner);
-        dialog.initModality(Modality.WINDOW_MODAL);
+        // =======================================================
+        // NOTE: Send a little exta bw and time for PSD analysis
+        // =======================================================
+        double currBw = (selectionFreqHigh - selectionFreqLow);
+        double center = (selectionFreqHigh + selectionFreqLow) / 2.0 - inputFc;
 
-        dialog.setHeaderText("Choose an API endpoint to execute:");
-        dialog.setContentText("Capability:");
+        // NOTE: extend time by
+        long targetStart = selectionStartSample;
+        long targetWidth = (long) selectionStartWidthSamples;
+        int down = (int) Math.ceil(inputFs / currBw);
+        double targetFs = inputFs / down;
 
-        // Fill the ComboBox with the paths from your map
-        dialog.getItems().addAll(restHelper.getCapabilityPaths());
+        final double finalTargetFs = targetFs;
+        // final double finalStartTime = targetStart / inputFs;
+        String dataType = sigMfHelper.getMetadata().global().datatype();
 
-        dialog.showAndWait().ifPresent(selectedPath -> {
-            // Retrieve the capability metadata we stored earlier
-            Capability cap = restHelper.getCapability(selectedPath);
-            restHelper.showCapabilityDialog(owner, cap);
+        asyncDownConvertService.extractAndDownConvertAsync(
+                sigMfHelper.getDataBuffer(), targetStart, (int) targetWidth, dataType, center / inputFs, down, fastDownConverter.isSelected())
+            .thenAccept(data -> {
+            // Build the IqData object
+            IqData iqData = new IqData(
+                "current", data, finalTargetFs, this.sigMfHelper.getMetadata(), selectionAnnotation);
+
+            // NOTE: return to UI thread
+            Platform.runLater(() -> {
+                Window owner = ((javafx.scene.control.MenuItem) event.getSource())
+                                    .getParentPopup().getOwnerWindow();
+
+                ChoiceDialog<String> dialog = new ChoiceDialog<>();
+                dialog.setTitle("Select Capability");
+
+                // NOTE: tie to parent window (so centers dialog)
+                dialog.initOwner(owner);
+                dialog.initModality(Modality.WINDOW_MODAL);
+
+                dialog.setHeaderText("Choose an API endpoint to execute:");
+                dialog.setContentText("Capability:");
+
+                // Fill the ComboBox with the paths from your map
+                dialog.getItems().addAll(restHelper.getCapabilityPaths());
+
+                dialog.showAndWait().ifPresent(selectedPath -> {
+                    // Retrieve the capability metadata we stored earlier
+                    Capability cap = restHelper.getCapability(selectedPath);
+                    restHelper.showCapabilityDialog(owner, cap);
+                });
+            });
+        })
+        .exceptionally(ex -> {
+            Platform.runLater(() -> showErrorAlert("DSP Error", ex.getMessage()));
+            return null;
         });
     }
-
 }

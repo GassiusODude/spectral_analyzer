@@ -46,9 +46,14 @@ public class ExtractDownConvertService {
             long byteOffset = startByte + (ind * bytesPerIQ);
 
             double real, imag;
-            if (datatype.startsWith("ci16")) {
+            if (datatype.startsWith("cf64")) {
+                real = buffer.getDouble((int) byteOffset);
+                imag = buffer.getDouble((int) (byteOffset + 8));
+
+            } else if (datatype.startsWith("ci16")) {
                 real = buffer.getShort((int) byteOffset) / 32768.0;
                 imag = buffer.getShort((int) byteOffset + 2) / 32768.0;
+
             } else {
                 real = buffer.getFloat((int) byteOffset);
                 imag = buffer.getFloat((int) byteOffset + 4);
