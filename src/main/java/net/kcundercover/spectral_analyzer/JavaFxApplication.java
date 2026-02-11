@@ -9,6 +9,7 @@ import net.kcundercover.spectral_analyzer.SpectralAnalyzerApplication;
 import net.rgielen.fxweaver.core.FxWeaver;
 import org.springframework.boot.builder.SpringApplicationBuilder;
 import org.springframework.context.ConfigurableApplicationContext;
+import net.kcundercover.spectral_analyzer.controllers.MainController;
 
 public class JavaFxApplication extends Application {
 

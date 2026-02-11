@@ -5,7 +5,7 @@
 
 <VBox xmlns="http://javafx.com"
       xmlns:fx="http://javafx.com"
-      fx:controller="net.kcundercover.spectral_analyzer.AnnotationStyleDialogController"
+      fx:controller="net.kcundercover.spectral_analyzer.controllers.AnnotationStyleDialogController"
       spacing="15" style="-fx-padding: 20;">
 
     <!-- Table of unique keys and colors -->

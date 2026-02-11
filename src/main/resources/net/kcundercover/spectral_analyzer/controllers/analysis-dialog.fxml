@@ -8,7 +8,7 @@
 <VBox prefHeight="600.0" prefWidth="800.0" spacing="10" style="-fx-padding: 10;"
       xmlns="http://javafx.com"
       xmlns:fx="http://javafx.com"
-      fx:controller="net.kcundercover.spectral_analyzer.AnalysisDialogController">
+      fx:controller="net.kcundercover.spectral_analyzer.controllers.AnalysisDialogController">
 
     <Label text="Signal Analysis View" style="-fx-font-size: 18; -fx-font-weight: bold;" />
 

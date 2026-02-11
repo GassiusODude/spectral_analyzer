@@ -1,4 +1,4 @@
-package net.kcundercover.spectral_analyzer;
+package net.kcundercover.spectral_analyzer.controllers;
 
 import javafx.event.ActionEvent;
 import javafx.fxml.FXML;
@@ -72,6 +72,9 @@ import net.kcundercover.spectral_analyzer.rest.Capability;
 import net.kcundercover.spectral_analyzer.rest.RestHelper;
 import net.kcundercover.spectral_analyzer.sigmf.SigMfHelper;
 import net.kcundercover.spectral_analyzer.sigmf.SigMfAnnotation;
+import net.kcundercover.spectral_analyzer.services.ExtractDownConvertService;
+import net.kcundercover.spectral_analyzer.services.SpectralService;
+
 @Component
 @FxmlView("main-scene.fxml")
 public class MainController {

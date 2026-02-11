@@ -1,4 +1,4 @@
-package net.kcundercover.spectral_analyzer;
+package net.kcundercover.spectral_analyzer.services;
 
 import org.apache.commons.math3.complex.Complex;
 import org.apache.commons.math3.transform.DftNormalization;

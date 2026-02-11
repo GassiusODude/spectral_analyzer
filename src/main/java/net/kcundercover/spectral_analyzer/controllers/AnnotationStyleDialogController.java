@@ -1,4 +1,4 @@
-package net.kcundercover.spectral_analyzer;
+package net.kcundercover.spectral_analyzer.controllers;
 
 
 
@@ -27,7 +27,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
-import net.kcundercover.spectral_analyzer.AnnotationStyle;
+import net.kcundercover.spectral_analyzer.data.AnnotationStyle;
 
 @Component
 public class AnnotationStyleDialogController {

@@ -1,4 +1,4 @@
-package net.kcundercover.spectral_analyzer;
+package net.kcundercover.spectral_analyzer.services;
 
 import org.springframework.stereotype.Service;
 import java.nio.MappedByteBuffer;

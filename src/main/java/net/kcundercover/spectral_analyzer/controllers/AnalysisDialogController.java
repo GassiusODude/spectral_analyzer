@@ -1,4 +1,4 @@
-package net.kcundercover.spectral_analyzer;
+package net.kcundercover.spectral_analyzer.controllers;
 
 import javafx.fxml.FXML;
 import javafx.event.ActionEvent;
