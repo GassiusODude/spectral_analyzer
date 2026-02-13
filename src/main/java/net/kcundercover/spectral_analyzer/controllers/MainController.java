@@ -1234,6 +1234,11 @@ public class MainController {
                 "Selection Incomplete",
                 "Select time/freq segment or click on annotation");
             return;
+        } else if (selectionAnnotation == null){
+            showErrorAlert(
+                "Select an annotation",
+                "Click/Select an annotation first");
+            return;
         }
 
         double inputFs = sigMfHelper.getMetadata().global().sampleRate();
@@ -1283,7 +1288,7 @@ public class MainController {
                 dialog.showAndWait().ifPresent(selectedPath -> {
                     // Retrieve the capability metadata we stored earlier
                     Capability cap = restHelper.getCapability(selectedPath);
-                    restHelper.showCapabilityDialog(owner, cap);
+                    restHelper.showCapabilityDialog(owner, cap, iqData);
                 });
             });
         })

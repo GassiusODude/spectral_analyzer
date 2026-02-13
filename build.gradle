@@ -99,6 +99,9 @@ repositories {
 	// Use local maven repo if available (for JDSP dependency)
 	mavenLocal()
 
+    // NOTE: This worked in Github Actions, but requires setting up
+    //       username and access token otherwise.
+    //       Migrated to use "https://jitpack.io" instead
 	// If no local, then pull from repo (Github CI)
     // maven {
     //     url 'https://maven.pkg.github.com/GassiusODude/jdsp'

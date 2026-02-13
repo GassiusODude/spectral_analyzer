@@ -1,18 +1,19 @@
 package net.kcundercover.spectral_analyzer.rest;
-import java.net.http.HttpResponse;
-import java.nio.charset.StandardCharsets;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Set;
-import java.util.Map;
+
+import java.io.IOException;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
-import java.io.IOException;
+import java.net.http.HttpResponse;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URLEncoder;
-import javafx.scene.layout.GridPane;
-// import javafx.scene.control.*;
+import java.nio.charset.StandardCharsets;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+
+import javafx.application.Platform;
 import javafx.scene.control.Alert;
 import javafx.scene.control.ButtonBar;
 import javafx.scene.control.ButtonType;
@@ -25,14 +26,17 @@ import javafx.scene.control.Spinner;
 import javafx.scene.control.SpinnerValueFactory;
 import javafx.scene.control.TextArea;
 import javafx.scene.control.TextField;
+
+import javafx.scene.layout.GridPane;
 import javafx.stage.Window;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import javafx.application.Platform;
-
+import net.kcundercover.spectral_analyzer.data.IqData;
 
 /**
  * Helper to set up dynamic capabilities through REST API
@@ -119,23 +123,26 @@ public class RestHelper {
         ObjectNode body = mapper.createObjectNode();
 
         // Dynamically pack whatever the user typed into the JSON body
-        userInputs.forEach((key, value) -> {
-            RH_LOGGER.info("{} with value {} of type {}", key, value, value.getClass().getName());
-            if (value instanceof Integer) {
-                body.put(key, (Integer) value);
-            } else if (value instanceof Double) {
-                body.put(key, (Double) value);
-            } else if (value instanceof double[][]) {
-                // Handle the 2D array for things like "observations"
-                body.putPOJO(key, value);
-            }
-        });
 
 
-        // 2. Initialize Client and Build Request
+        // Initialize Client and Build Request
         HttpClient client = HttpClient.newHttpClient();
 
         if (cap.getMethod() == HttpMethod.POST) {
+            // ============================================================
+            // Prepare POST request
+            // ============================================================
+            userInputs.forEach((key, value) -> {
+                RH_LOGGER.info("{} with value {} of type {}", key, value, value.getClass().getName());
+                if (value instanceof Integer) {
+                    body.put(key, (Integer) value);
+                } else if (value instanceof Double) {
+                    body.put(key, (Double) value);
+                } else if (value instanceof double[][]) {
+                    // Handle the 2D array for things like "observations"
+                    body.putPOJO(key, value);
+                }
+            });
             HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(cap.getBaseUrl() + cap.getPath()))
                 .header("Content-Type", "application/json")
@@ -223,9 +230,19 @@ public class RestHelper {
 
     }
 
+    /**
+     * Get the capability paths
+     * @return Return a set of paths
+     */
     public Set<String> getCapabilityPaths() {
         return capabilities.keySet();
     }
+
+    /**
+     * Get the capability based on name
+     * @param path The path of interest
+     * @return The capability object
+     */
     public Capability getCapability(String path) {
         return capabilities.get(path);
     }
@@ -291,7 +308,7 @@ public class RestHelper {
      * @param owner
      * @param schemaProperties
      */
-    public void showCapabilityDialog(Window owner, Capability cap) {
+    public void showCapabilityDialog(Window owner, Capability cap, IqData iq) {
         Dialog<Map<String, Object>> dialog = new Dialog<>();
         dialog.initOwner(owner);
         dialog.setTitle("Execute Capability");
