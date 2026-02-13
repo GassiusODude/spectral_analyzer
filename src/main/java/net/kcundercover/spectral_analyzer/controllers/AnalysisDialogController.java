@@ -561,9 +561,11 @@ public class AnalysisDialogController {
                 plot.removeRangeMarker(noiseFloorMarker);
             }
             noiseFloorMarker = new ValueMarker(y);
-            noiseFloorMarker.setPaint(java.awt.Color.RED);
+            noiseFloorMarker.setPaint(java.awt.Color.CYAN);
             noiseFloorMarker.setLabel("Noise: " + String.format("%.1f dB", y));
+            noiseFloorMarker.setStroke(new BasicStroke(2));
             plot.addRangeMarker(noiseFloorMarker);
+
             this.currentNoiseFloor = y;
         } else {
             // ====================================================================================
@@ -573,9 +575,11 @@ public class AnalysisDialogController {
                 plot.removeRangeMarker(passbandMarker);
             }
             passbandMarker = new ValueMarker(y);
-            passbandMarker.setPaint(java.awt.Color.GREEN);
+            passbandMarker.setPaint(java.awt.Color.YELLOW);
             passbandMarker.setLabel("Signal: " + String.format("%.1f dB", y));
+            passbandMarker.setStroke(new BasicStroke(2));
             plot.addRangeMarker(passbandMarker);
+
 
             this.currentPassbandLevel = y;
         }
@@ -603,6 +607,7 @@ public class AnalysisDialogController {
         ValueMarker marker = new ValueMarker(x);
         marker.setPaint(color);
         marker.setLabel(label);
+        marker.setStroke(new BasicStroke(2));
         plot.addRangeMarker(marker);
     }
 
