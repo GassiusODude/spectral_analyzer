@@ -29,6 +29,9 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 import net.kcundercover.spectral_analyzer.data.AnnotationStyle;
 
+/**
+ * Annotation Style Dialog
+ */
 @Component
 public class AnnotationStyleDialogController {
     private static final Logger ASDC_LOGGER = LoggerFactory.getLogger(AnnotationStyleDialogController.class);
@@ -42,9 +45,14 @@ public class AnnotationStyleDialogController {
     @FXML private Button loadBtn;
     @FXML private Button saveBtn;
 
+    /** Default constructor */
+    public AnnotationStyleDialogController() {}
     // The list of annotations
     private final ObservableList<AnnotationStyle> styleList = FXCollections.observableArrayList();
 
+    /**
+     * Initialize dialog for selecting custom color scheme
+     */
     @FXML
     public void initialize() {
         // tie remove button to the selectedItemProperty of the table
@@ -159,6 +167,9 @@ public class AnnotationStyleDialogController {
     //                                          button handlers
     // ============================================================================================
 
+    /**
+     * Add new style to the list
+     */
     @FXML
     private void handleAddStyle() {
         ASDC_LOGGER.debug("Adding new style for label: {}", labelField.getText());
@@ -177,6 +188,9 @@ public class AnnotationStyleDialogController {
         ASDC_LOGGER.debug("Style list updated. Current count: {}", styleList.size());
     }
 
+    /**
+     * Remove selected style
+     */
     @FXML
     private void handleRemoveStyle() {
         // 1. Get the currently selected item from the table
@@ -198,6 +212,9 @@ public class AnnotationStyleDialogController {
         }
     }
 
+    /**
+     * Load a JSON file of a custom set of colors
+     */
     @FXML
     private void handleLoadStyles() {
         FileChooser fc = new FileChooser();
@@ -233,6 +250,9 @@ public class AnnotationStyleDialogController {
     }
 
 
+    /**
+     * Save a JSON configuration of this set of custom color set
+     */
     @FXML
     private void handleSaveStyles() {
         FileChooser fc = new FileChooser();

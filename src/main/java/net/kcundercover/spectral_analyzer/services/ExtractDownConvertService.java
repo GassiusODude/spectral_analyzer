@@ -17,6 +17,20 @@ import net.kcundercover.jdsp.signal.Resampler;
 public class ExtractDownConvertService {
     private static final Logger EDCS_LOGGER = LoggerFactory.getLogger(ExtractDownConvertService.class);
 
+    /** Default constructor */
+    public ExtractDownConvertService() {}
+
+    /**
+     * Extract and down convert the signal
+     *
+     * @param buffer The bytes buffer
+     * @param startSample The sample offset from the start of buffer
+     * @param count The number of samples to extract
+     * @param datatype The data type, controls the number of bytes per sample
+     * @param freqOff The frequency offset
+     * @param down The down sample rate.
+     * @return the downconverted samples
+     */
     public double[][] extractAndDownConvert(
             MappedByteBuffer buffer, long startSample,
             int count, String datatype, double freqOff, int down) {
@@ -28,6 +42,14 @@ public class ExtractDownConvertService {
 
     /**
      * Extracts IQ samples and performs a simple down-conversion/resample.
+     * @param buffer The bytes buffer
+     * @param startSample The sample offset from the start of buffer
+     * @param count The number of samples to extract
+     * @param datatype The data type, controls the number of bytes per sample
+     * @param freqOff The frequency offset
+     * @param down The down sample rate.
+     * @param fast Choose between two modes.  fast has less attenuation of out of band noise
+     * @return the downconverted samples
      */
     public double[][] extractAndDownConvert(
             MappedByteBuffer buffer, long startSample,

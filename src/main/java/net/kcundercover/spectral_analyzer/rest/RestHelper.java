@@ -30,6 +30,7 @@ import javafx.scene.control.TextField;
 import javafx.scene.layout.GridPane;
 import javafx.stage.Window;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -44,14 +45,20 @@ import net.kcundercover.spectral_analyzer.data.IqData;
 public class RestHelper {
     private static final Logger RH_LOGGER = LoggerFactory.getLogger(RestHelper.class);
 
+    /** Store of capabilities mapped by URL path */
     Map<String, Capability> capabilities = new HashMap<>();
+
+    /** Default constructor */
+    public RestHelper() {
+
+    }
 
     /**
      * Determine the base URL from the schema URL
      *
      * The schema URL is different depending the the server type
-     * With FastAPI, the schema is <HOST>:<PORT>/openapi.json
-     * In spring boot it is in the form of <HOST>:<PORT>/v3/api-docs
+     * With FastAPI, the schema is HOST:PORT/openapi.json
+     * In spring boot it is in the form of HOST:PORT/v3/api-docs
      *
      * @param root Root of the JSON.
      * @param schemaUrl Schema URL
@@ -122,9 +129,6 @@ public class RestHelper {
         ObjectMapper mapper = new ObjectMapper();
         ObjectNode body = mapper.createObjectNode();
 
-        // Dynamically pack whatever the user typed into the JSON body
-
-
         // Initialize Client and Build Request
         HttpClient client = HttpClient.newHttpClient();
 
@@ -133,39 +137,71 @@ public class RestHelper {
             // Prepare POST request
             // ============================================================
             userInputs.forEach((key, value) -> {
-                RH_LOGGER.info("{} with value {} of type {}", key, value, value.getClass().getName());
+                String schemaType = cap.getSchema().path(key).path("type").asText();
+                RH_LOGGER.debug("{} with value of type {}, Schema = {}",
+                    key, value.getClass().getName(), schemaType);
+
                 if (value instanceof Integer) {
                     body.put(key, (Integer) value);
                 } else if (value instanceof Double) {
                     body.put(key, (Double) value);
-                } else if (value instanceof double[][]) {
-                    // Handle the 2D array for things like "observations"
-                    body.putPOJO(key, value);
+                } else if (value instanceof String) {
+                    if ("array".equals(schemaType)) {
+                        RH_LOGGER.info("Treating {} as JSON Tree", key);
+                        try {
+                            JsonNode tmpArray = mapper.readTree(value.toString());
+                            // body.set(key, tmpArray);
+                            body.putPOJO(key, tmpArray);
+                            RH_LOGGER.info("Body = {}", tmpArray.toPrettyString());
+                        } catch(JsonProcessingException jpe) {
+                            RH_LOGGER.warn("Json process error " + jpe.toString());
+                        }
+                    } else {
+                        body.put(key, (String) value);
+                        RH_LOGGER.debug("Treating {} as String for shema {}", key, schemaType);
+                    }
+                } else if (value instanceof Boolean b) {
+
+                    body.put(key, b);
+                } else {
+                    RH_LOGGER.info("Got {} = {}, key={} of class ={}", key, value, key, value.getClass().toString());
                 }
             });
+
+            // ============================================================
+            // Send POST request
+            // ============================================================
             HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(cap.getBaseUrl() + cap.getPath()))
                 .header("Content-Type", "application/json")
                 .POST(HttpRequest.BodyPublishers.ofString(body.toString()))
                 .build();
 
-            // 3. Execute Async
             client.sendAsync(request, HttpResponse.BodyHandlers.ofString())
-                .thenApply(HttpResponse::body)
-                .thenAccept(jsonString -> {
+                .thenAccept(response -> {
                     Platform.runLater(() -> {
-                        try {
-                            JsonNode jsonResponse = mapper.readTree(jsonString);
-                            RH_LOGGER.info("Response = " + jsonResponse.toPrettyString());
-                        } catch (Exception e) {
-                            RH_LOGGER.info("Error parsing response: " + jsonString);
+                        String jsonString = response.body();
+                        int statusCode = response.statusCode();
+                        if (statusCode >= 200 && statusCode < 300) {
+                            try {
+                                JsonNode jsonResponse = mapper.readTree(jsonString);
+                                RH_LOGGER.info("Success: Response = " + jsonResponse.toPrettyString());
+                            } catch (Exception e) {
+                                RH_LOGGER.info("Success Status, but error parsing response: " + jsonString);
+                                showError("Success Status error parsing", "Success Status received, failed to parse response");
+                            }
+                        } else {
+                            RH_LOGGER.error("Server Error " + statusCode + ": " + jsonString);
+                            showError("Server Error", "Server return an error (" + statusCode + ")");
                         }
+
                     });
                 })
                 .exceptionally(ex -> {
                     Platform.runLater(() -> showError("Request Failed", ex.getMessage()));
                     return null;
                 });
+
         } else if (cap.getMethod() == HttpMethod.GET) {
             try {
                 // ============================================================
@@ -248,13 +284,66 @@ public class RestHelper {
     }
 
     /**
+     * Check if the object type matches the schema type
+     * @param value The object value
+     * @param schemaType The data type described in the schema
+     * @return Return true if compatible type to schema
+     */
+    private boolean isTypeCompatible(Object value, String schemaType) {
+        if (value == null) {
+            return false;
+        }
+        return switch (schemaType) {
+            case "string" -> value instanceof String;
+            case "integer" -> value instanceof Integer || value instanceof Long;
+            case "number" -> value instanceof Number; // Covers Double, Float, Integer, etc.
+            case "boolean" -> value instanceof Boolean;
+            case "array" -> value.getClass().isArray() || value instanceof java.util.Collection;
+            default -> false;
+        };
+    }
+
+    /**
+     * Update the control with the specified value
+     * @param control The GUI control component
+     * @param value The data object associated.
+     */
+    private void updateControlValue(Control control, Object value) {
+        if (value == null) {
+            return;
+        }
+        String strValue;
+        if (value.getClass().isArray()) {
+            strValue = java.util.Arrays.deepToString((Object[]) value);
+        } else {
+            strValue = value.toString();
+        }
+        if (control instanceof TextField tf) {
+            tf.setText(strValue);
+        } else if (control instanceof Spinner spinner) {
+            // We use a helper to set the value safely
+            spinner.getValueFactory().setValue(value);
+        } else if (control instanceof CheckBox cb && value instanceof Boolean b) {
+            cb.setSelected(b);
+        } else if (control instanceof ComboBox combo) {
+            // If the main input is also a combo (for enums)
+            combo.setValue(value.toString());
+        }
+    }
+
+
+    /**
      * Design UI form based on schemaProperties
      * @param schemaProperties Schema properties
      * @param grid Gridpane for the dynamic GUI
      * @param inputFields GUI components to take in input
+     * @param iq IQ data and SigMF properties
      */
-    public void buildFormFromSchema(JsonNode schemaProperties, GridPane grid, Map<String, Control> inputFields) {
-        int row = 0; // Move outside the forEach
+    public void buildFormFromSchema(JsonNode schemaProperties, GridPane grid, Map<String, Control> inputFields, IqData iq) {
+        int row = 0;
+
+        Map<String, Object> dataMap = iq.getData();
+
         for (var entry : schemaProperties.properties()) {
             String propertyName = entry.getKey();
             JsonNode propertyDetails = entry.getValue();
@@ -262,7 +351,13 @@ public class RestHelper {
 
             grid.add(new Label(propertyName + ":"), 0, row);
 
+            // initialize a control UI and a combo box with similiar data types
             Control inputControl;
+            ComboBox<String> comboData = new ComboBox<>();
+
+            // ----------------------------------------------------------------
+            // Prepare the input control UI in current row
+            // ----------------------------------------------------------------
             if (propertyDetails.has("enum")) {
                 ComboBox<String> combo = new ComboBox<>();
                 propertyDetails.get("enum").forEach(val -> combo.getItems().add(val.asText()));
@@ -275,6 +370,7 @@ public class RestHelper {
                 // Spinner for doubles: Min, Max, Default, Amount to step by
                 inputControl = new Spinner<>(new SpinnerValueFactory.DoubleSpinnerValueFactory(-Double.MAX_VALUE, Double.MAX_VALUE, 0.0, 0.1));
                 ((Spinner<?>) inputControl).setEditable(true);
+
             } else if ("boolean".equals(type)) {
                 inputControl = new CheckBox();
             } else {
@@ -282,7 +378,32 @@ public class RestHelper {
                 ((TextField)inputControl).setPromptText(type);
             }
 
+            // ----------------------------------------------------------------
+            // Prepare combo box for simple input in this row
+            // ----------------------------------------------------------------
+            // update the keys to properties with matching data types
+            for (Map.Entry<String, Object> dataEntry: dataMap.entrySet()) {
+                String key = dataEntry.getKey();
+                Object value = dataEntry.getValue();
+                if (isTypeCompatible(value, type)) {
+                    comboData.getItems().add(key);
+                }
+            }
+
+            // add selection listener to update control if selection is made
+            comboData.getSelectionModel().selectedItemProperty().addListener((obs, oldVal, newVal) -> {
+                if (newVal != null) {
+                    Object sourceValue = dataMap.get(newVal);
+                    updateControlValue(inputControl, sourceValue);
+                }
+            });
+
+
+            // ----------------------------------------------------------------
+            // update grid
+            // ----------------------------------------------------------------
             grid.add(inputControl, 1, row);
+            grid.add(comboData, 2, row);
             inputFields.put(propertyName, inputControl);
             row++;
         }
@@ -305,8 +426,9 @@ public class RestHelper {
 
     /**
      * Show Dialog box
-     * @param owner
-     * @param schemaProperties
+     * @param owner Owner window to align the dialog
+     * @param cap The capability
+     * @param iq The iq data being applied towards
      */
     public void showCapabilityDialog(Window owner, Capability cap, IqData iq) {
         Dialog<Map<String, Object>> dialog = new Dialog<>();
@@ -325,13 +447,14 @@ public class RestHelper {
         dialog.getDialogPane().getButtonTypes().addAll(okButtonType, ButtonType.CANCEL);
 
         Map<String, Control> inputFields = new HashMap<>();
-        buildFormFromSchema(cap.getSchema(), grid, inputFields);
+        buildFormFromSchema(cap.getSchema(), grid, inputFields, iq);
         dialog.getDialogPane().setContent(grid);
 
         dialog.setResultConverter(dialogButton -> {
             if (dialogButton == okButtonType) {
                 Map<String, Object> results = new HashMap<>();
                 inputFields.forEach((name, control) -> {
+                    String schemaType = cap.getSchema().path("properties").path(name).path("type").asText();
                     if (control instanceof TextField) {
                         results.put(name, ((TextField) control).getText());
                     } else if (control instanceof ComboBox) {

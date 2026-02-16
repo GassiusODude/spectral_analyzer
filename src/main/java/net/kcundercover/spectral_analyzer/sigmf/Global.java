@@ -9,6 +9,13 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import java.util.Map;
 import java.util.Set;
 
+/**
+ * The global field of the SigMF meta data
+* @param datatype Data type string
+* @param sampleRate Sample rate
+* @param version SigMF version used
+* @param extensions Extension for custom fields.
+ */
 @JsonIgnoreProperties(ignoreUnknown = true)
 public record Global(
     @JsonProperty("core:datatype") String datatype,
@@ -20,6 +27,13 @@ public record Global(
     @JsonAnyGetter
     Map<String, Object> extensions) {
 
+    /**
+     * Constructor
+     * @param datatype Data type string
+     * @param sampleRate Sample rate
+     * @param version SigMF version used
+     * @param extensions Extension for custom fields.
+     */
     public Global {
         // Validation/Defaults
         if (sampleRate == null) {
@@ -32,9 +46,14 @@ public record Global(
         extensions = (extensions == null) ? Map.of() : Map.copyOf(extensions);
     }
 
-    // Set of supported types for 2026
-    private static final Set<String> SUPPORTED_TYPES = Set.of("cf32_le", "cf32_be", "ci16_le", "ci16_be");
+    /** Supported data types */
+    private static final Set<String> SUPPORTED_TYPES = Set.of(
+        "cf32_le", "cf32_be", "ci16_le", "ci16_be");
 
+    /**
+     * Getter for extensions fields
+     * @return The custom fields
+     */
     @JsonAnyGetter
     public Map<String, Object> extensions() {
         return Map.copyOf(extensions);
@@ -42,6 +61,7 @@ public record Global(
 
     /**
      * Calculates bytes per I/Q pair based on SigMF convention
+     * @return The number of bytes per sample
      */
     public int getBytesPerSample() {
         if (datatype.startsWith("cf32")) {

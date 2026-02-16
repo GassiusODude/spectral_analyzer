@@ -30,7 +30,14 @@ public class Capability {
     private final JsonNode schema;
 
 
-    // Private constructor: use the static factory instead
+    /**
+     * Constructor
+     * @param baseUrl The base URL for the capability
+     * @param path The path from the base URL
+     * @param method The HttpMethod (GET, POST)
+     * @param metadata Json object from paths
+     * @param root Root JSON object
+     */
     private Capability(String baseUrl, String path, HttpMethod method, JsonNode metadata, JsonNode root) {
         this.baseUrl = baseUrl;
         this.path = path;
@@ -41,6 +48,11 @@ public class Capability {
 
     /**
      * Factory: Inspects a path node and creates Capabilities for all supported HTTP methods.
+     * @param baseUrl The base URL to scan
+     * @param path The paths from the base URL
+     * @param pathNode The Json object representing the path
+     * @param root The root node of hte OpenAPI json.path.
+     * @return THe list of capabilities found.
      */
     public static List<Capability> fromPathNode(String baseUrl, String path, JsonNode pathNode, JsonNode root) {
         List<Capability> discovered = new ArrayList<>();
@@ -58,14 +70,15 @@ public class Capability {
     }
 
     /**
-     * Resikve the properties from the Schema
+     * Resolve the properties from the Schema
      * @param operation The operation node for a specific path.
-     * @param root
-     * @return
+     * @param root The root node
+     * @return The Json Node
      */
     private JsonNode resolveProperties(JsonNode operation, JsonNode root) {
         // NOTE: Get the RequestBody
         JsonNode schema = operation.at("/requestBody/content/application~1json/schema");
+
         if (!schema.isMissingNode()) {
             if (schema.has("$ref")) {
                 // references to
@@ -76,9 +89,10 @@ public class Capability {
             return schema.path("properties");
         }
 
-        // 2. Try GET/DELETE (Parameters Array)
+        // Try to get parameters for GET/DELETE (Parameters Array)
         JsonNode parameters = operation.path("parameters");
         CAP_LOGGER.info("Parameters field " + parameters.toPrettyString());
+
         ObjectMapper mapper = new ObjectMapper();
         if (parameters.isArray()) {
             CAP_LOGGER.info("Capabilities has array of parameter");
@@ -86,14 +100,12 @@ public class Capability {
 
             for (JsonNode param : parameters) {
                 String name = param.path("name").asText();
-                // In OpenAPI 3, the type is inside the 'schema' object of the parameter
                 JsonNode paramSchema = param.path("schema");
                 flattenedParams.set(name, paramSchema);
                 CAP_LOGGER.info("Parmeter({}) with {}", name, paramSchema.toString());
             }
             return flattenedParams;
         }
-
         return mapper.createObjectNode(); // Return empty if nothing found
     }
 
@@ -106,6 +118,10 @@ public class Capability {
         return baseUrl;
     }
 
+    /**
+     * Get the path of the capability
+     * @return Get the path of the capability, not including the base URL
+     */
     public String getPath() {
         return path;
     }
@@ -129,15 +145,19 @@ public class Capability {
      * Get the schema (this is captured if the 'paths' section uses
      * references to custom objects in the 'components' section.  This
      * would be from the components section.)
-     * @return
+     * @return The schema of interest
      */
     public JsonNode getSchema() {
         return schema;
     }
 
+    /**
+     * Print the state of capability
+     */
     public void printState() {
         CAP_LOGGER.info("Base URL = {}\tMode= {}",
             this.baseUrl, this.method.toString());
+
         if (this.metadata != null) {
             CAP_LOGGER.info("metadata = {}",
                 this.metadata.toPrettyString());

@@ -9,8 +9,16 @@ import java.util.concurrent.Executors;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+/**
+ * Service to call the extract and down convert service asynchronously
+ */
 @Service
 public class AsyncExtractDownConvertService {
+
+    /**
+     * Default Constructor
+     */
+    public AsyncExtractDownConvertService(){}
 
     @Autowired
     private ExtractDownConvertService syncService;
@@ -26,6 +34,17 @@ public class AsyncExtractDownConvertService {
             }
     );
 
+    /**
+     * Extract the samples, shift in frequency and down convert.
+     * @param buffer The data buffer
+     * @param startSample The sample offset from start of buffer
+     * @param count Count in samples to extract
+     * @param datatype The data type of the buffer
+     * @param freqOff Frequency offset to apply
+     * @param down Down convert rate
+     * @param fast Use fast mode or not.  Fast mode has less out of bound attenuation
+     * @return The completable future output
+     */
     public CompletableFuture<double[][]> extractAndDownConvertAsync(
             MappedByteBuffer buffer, long startSample,
             int count, String datatype, double freqOff, int down, boolean fast) {

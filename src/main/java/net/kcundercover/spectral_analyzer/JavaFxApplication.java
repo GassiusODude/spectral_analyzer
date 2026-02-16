@@ -11,8 +11,13 @@ import org.springframework.boot.builder.SpringApplicationBuilder;
 import org.springframework.context.ConfigurableApplicationContext;
 import net.kcundercover.spectral_analyzer.controllers.MainController;
 
+/**
+ * JavaFX application
+ */
 public class JavaFxApplication extends Application {
 
+    /** Default constructor */
+    public JavaFxApplication() {}
     private ConfigurableApplicationContext context;
 
     @Override

@@ -78,10 +78,16 @@ import net.kcundercover.spectral_analyzer.services.AsyncExtractDownConvertServic
 import net.kcundercover.spectral_analyzer.services.ExtractDownConvertService;
 import net.kcundercover.spectral_analyzer.services.SpectralService;
 
-
+/**
+ * Main controller for FXML
+ */
 @Component
 @FxmlView("main-scene.fxml")
 public class MainController {
+    /** Default constructor */
+    public MainController(){
+
+    }
     private static final Logger MC_LOGGER = LoggerFactory.getLogger(MainController.class);
     private RestHelper restHelper = new RestHelper();
     // throttle updates
@@ -238,6 +244,9 @@ public class MainController {
     //                                  Initialize
     // ============================================================================================
 
+    /**
+     * Initialize method for Controller
+     */
     @FXML
     public void initialize() {
         annotationColorPicker.setValue(Color.MAGENTA);
@@ -690,7 +699,7 @@ public class MainController {
 
     /**
      * Handle exiting
-     * @param event
+     * @param event Handle menu item for exit.
      */
     @FXML
     public void handleExit(ActionEvent event) {
@@ -699,6 +708,7 @@ public class MainController {
 
     /**
      * Handle the About menu item
+     * @param event The menu item event that triggered this listener
      */
     @FXML
     public void handleAbout(ActionEvent event) {
