@@ -6,6 +6,13 @@ import com.fasterxml.jackson.annotation.JsonAnySetter;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 
+/**
+ * The capture field of the SigMF Metadata
+* @param sampleStart The start sample of the capture
+* @param frequency Frequency of the capture
+* @param datetime The timestamp of the capture
+* @param extensions Extension fields
+*/
 @JsonIgnoreProperties(ignoreUnknown = true)
 public record Capture(
     @JsonProperty("core:sample_start") Long sampleStart,
@@ -15,6 +22,13 @@ public record Capture(
     @JsonAnyGetter
     Map<String, Object> extensions
 ) {
+    /**
+     * Constructor
+     * @param sampleStart The start sample of the capture
+     * @param frequency Frequency of the capture
+     * @param datetime The timestamp of the capture
+     * @param extensions Extension fields
+     */
     public Capture {
         // Validation/Defaults
         if (sampleStart == null ) {
@@ -27,6 +41,10 @@ public record Capture(
         extensions = (extensions == null) ? Map.of() : Map.copyOf(extensions);
     }
 
+    /**
+     * Getter for custom fields
+     * @return a copy of the extension fields
+     */
     @JsonAnyGetter
     public Map<String, Object> extensions() {
         // Fix EI: Prevent internal representation exposure
@@ -34,6 +52,7 @@ public record Capture(
     }
     /**
      * Logic to check if this capture has a valid timestamp
+     * @return True if capture has a valid timestamp.
      */
     public boolean hasTimestamp() {
         return datetime != null && !datetime.isBlank();

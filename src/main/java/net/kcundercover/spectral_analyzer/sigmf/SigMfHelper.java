@@ -28,10 +28,16 @@ public class SigMfHelper {
     private Path inputMeta;
 
     /**
+     * Default constructor
+     */
+    public SigMfHelper() {
+
+    }
+    /**
      * Loads a SigMF meta file
      *
      * @param metaPath Path to the SigMF meta file.
-     * @throws Exception
+     * @throws Exception I/O or Json parsing exception
      */
     public void load(Path metaPath) throws Exception {
         // Load Metadata
@@ -77,6 +83,10 @@ public class SigMfHelper {
         return file;
     }
 
+    /**
+     * Getter for the metadata
+     * @return The metadata
+     */
     @SuppressFBWarnings(
         value = "EI_EXPOSE_REP",
         justification = "SigMfMetadata is immutable")
@@ -84,6 +94,10 @@ public class SigMfHelper {
         return metadata;
     }
 
+    /**
+     * Getter for the data buffer
+     * @return the data buffer
+     */
     @SuppressFBWarnings(
         value = "EI_EXPOSE_REP",
         justification = "Intentional: buffer is shared for performance")
@@ -99,6 +113,10 @@ public class SigMfHelper {
         return metadata.annotations();
     }
 
+    /**
+     * Save the SigMF file with the updated annotationList
+     * @param annotationList List of annotations.
+     */
     public void saveSigMF(List<SigMfAnnotation> annotationList) {
         try {
             // Use the class-level mapper and just enable the feature for this call

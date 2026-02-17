@@ -1,4 +1,4 @@
-package net.kcundercover.spectral_analyzer;
+package net.kcundercover.spectral_analyzer.services;
 
 import org.apache.commons.math3.complex.Complex;
 import org.apache.commons.math3.transform.DftNormalization;
@@ -14,21 +14,27 @@ import java.nio.MappedByteBuffer;
  */
 @Service
 public class SpectralService {
+    /** Default constructor */
+    public SpectralService() {
 
+    }
+
+    /** FFT Transformer */
     private final FastFourierTransformer transformer = new FastFourierTransformer(DftNormalization.STANDARD);
 
     /**
      * Processes a chunk of IQ data into power magnitudes (dB).
      * @param buffer The SigMF MappedByteBuffer
      * @param startByte The byte offset to start reading
-     * @param n The number of samples (MUST be a power of 2 for Apache Commons)
+     * @param nfft The number of samples and number fft points (MUST be a power of 2 for Apache Commons)
+     * @param datatype Specify the type of data from the buffer
      * @return Array of magnitudes for the spectrogram
      */
-    public double[] computeMagnitudes(MappedByteBuffer buffer, int startByte, int n, String datatype) {
-        Complex[] complexData = new Complex[n];
+    public double[] computeMagnitudes(MappedByteBuffer buffer, int startByte, int nfft, String datatype) {
+        Complex[] complexData = new Complex[nfft];
         boolean isCi16 = datatype.startsWith("ci16");
 
-        for (int i = 0; i < n; i++) {
+        for (int i = 0; i < nfft; i++) {
             double real, imag;
             if (isCi16) {
                 // Read 2-byte shorts for ci16 (Total 4 bytes per IQ pair)
@@ -45,13 +51,15 @@ public class SpectralService {
         // calculate FFT (frequencies are from 0 to FS)
         Complex[] fftResult = transformer.transform(complexData, TransformType.FORWARD);
 
+        // --------------------------------------------------------------------
         // Apply FFT Shift (make frequency range from -fs/2 to fs/2)
-        double[] shiftedMagnitudes = new double[n];
-        int half = n / 2;
+        // --------------------------------------------------------------------
+        double[] shiftedMagnitudes = new double[nfft];
+        int half = nfft / 2;
 
-        for (int i = 0; i < n; i++) {
+        for (int i = 0; i < nfft; i++) {
             // Swap halves: index i becomes (i + half) % n
-            int shiftedIndex = (i + half) % n;
+            int shiftedIndex = (i + half) % nfft;
 
             double abs = fftResult[i].abs();
             shiftedMagnitudes[shiftedIndex] = 20 * Math.log10(abs + 1e-10);

@@ -23,7 +23,7 @@
       minHeight="400" minWidth="600"
       xmlns="http://javafx.com"
       xmlns:fx="http://javafx.com"
-      fx:controller="net.kcundercover.spectral_analyzer.MainController">
+      fx:controller="net.kcundercover.spectral_analyzer.controllers.MainController">
    <children>
       <MenuBar VBox.vgrow="NEVER" style="-fx-background-color: #f4f4f4; -fx-base: #f4f4f4;">
         <menus>
@@ -33,6 +33,12 @@
               <MenuItem text="Save Signal..." onAction="#handleSave" />
               <SeparatorMenuItem />
               <MenuItem text="Exit" onAction="#handleExit" />
+            </items>
+          </Menu>
+           <Menu text="Capabilities">
+            <items>
+              <MenuItem text="Connect to REST Server..." onAction="#handleConnect" />
+              <MenuItem text="Run Capability" onAction="#showChooseCapability" />
             </items>
           </Menu>
           <Menu text="Preferences">

@@ -10,7 +10,7 @@ plugins {
 }
 
 group = 'net.kcundercover'
-version = '0.1.0'
+version = '0.1.1'
 description = 'Demo project for Spring Boot'
 
 java {
@@ -28,7 +28,12 @@ javafx {
 // ============================================================================
 // NOTE: Set up bootJar to support the Spring boot JavaFX application
 bootJar {
-    archiveClassifier = 'boot' // Distinguishes it from the plain jar
+	// Detect OS for naming
+    def os = System.getProperty("os.name").toLowerCase()
+    def platform = os.contains("win") ? "win" : os.contains("linux") ? "linux" : "mac"
+
+    archiveClassifier = "boot-${platform}" // Result: -boot-win or -boot-linux
+    // archiveClassifier = 'boot' // Distinguishes it from the plain jar
     manifest {
         attributes(
             "Implementation-Title": "Spectral Analyzer",
@@ -94,6 +99,9 @@ repositories {
 	// Use local maven repo if available (for JDSP dependency)
 	mavenLocal()
 
+    // NOTE: This worked in Github Actions, but requires setting up
+    //       username and access token otherwise.
+    //       Migrated to use "https://jitpack.io" instead
 	// If no local, then pull from repo (Github CI)
     // maven {
     //     url 'https://maven.pkg.github.com/GassiusODude/jdsp'
@@ -110,6 +118,17 @@ repositories {
 }
 
 dependencies {
+    def javafxVersion = "21.0.2" // Match your Java version
+    def platforms = ['win', 'linux', 'mac']
+
+    platforms.each { platform ->
+        implementation "org.openjfx:javafx-controls:${javafxVersion}:${platform}"
+        implementation "org.openjfx:javafx-graphics:${javafxVersion}:${platform}"
+        implementation "org.openjfx:javafx-fxml:${javafxVersion}:${platform}"
+        // Add others like javafx-media if needed
+    }
+
+
 	implementation 'org.springframework.boot:spring-boot-starter-webmvc'
 	implementation 'net.rgielen:javafx-weaver-spring-boot-starter:2.0.1'
 

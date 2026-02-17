@@ -1,4 +1,4 @@
-package net.kcundercover.spectral_analyzer;
+package net.kcundercover.spectral_analyzer.controllers;
 
 import javafx.fxml.FXML;
 import javafx.event.ActionEvent;
@@ -10,6 +10,7 @@ import javafx.scene.layout.StackPane;
 import javafx.scene.Node;
 
 import javafx.stage.Stage;
+import java.awt.BasicStroke;
 import org.jfree.chart.fx.interaction.ChartMouseEventFX;
 import org.jfree.chart.fx.interaction.ChartMouseListenerFX;
 import org.jfree.chart.plot.ValueMarker;
@@ -31,8 +32,14 @@ import org.jfree.chart.renderer.xy.SamplingXYLineRenderer;
 import net.kcundercover.jdsp.signal.PowerSpectralDensity;
 import net.kcundercover.spectral_analyzer.sigmf.SigMfAnnotation;
 
+/**
+ * Analysis Dialog Controller to go into further analysis of an annotation
+ */
 public class AnalysisDialogController {
     private static final Logger ADC_LOGGER = LoggerFactory.getLogger(AnalysisDialogController.class);
+
+    /** Default Constructor */
+    public AnalysisDialogController() {}
 
     /** Active annotation is a copy of the annotation,
      * introduced through setAnalysisData()
@@ -305,6 +312,10 @@ public class AnalysisDialogController {
                 data, sampleRate, psdNfft);
         }
 
+        ValueAxis yAxis = viewPSD.getChart().getXYPlot().getRangeAxis();
+        ((NumberAxis) yAxis).setAutoRangeIncludesZero(false);
+        ((NumberAxis) yAxis).setAutoRange(true);
+
         // FIXME: (not working)
         //        Attempt to compare against threshold used in spectrogram)
         // offset = 10 * Math.log10(sampleRate / freqAndPsd[0].length);
@@ -357,6 +368,7 @@ public class AnalysisDialogController {
      * @param data Downconverted IQ signal, double[2][N], data[0] is real, data[1] is imaginary
      * @param sampleRate Sample rate of the downconverted signal
      * @param origSampleRate the original sampling rate of the signal
+     * @param startTime The start time
      * @param newAnnot The current SigMFAnnotation
      */
     public void setAnalysisData(double[][] data, double sampleRate, double origSampleRate, double startTime, SigMfAnnotation newAnnot) {
@@ -431,6 +443,10 @@ public class AnalysisDialogController {
 
     }
 
+    /**
+     * Handle the close event
+     * @param event Handle closing of the dialog
+     */
     @FXML
     public void handleClose(ActionEvent event) {
         performCleanup();
@@ -439,6 +455,13 @@ public class AnalysisDialogController {
         stage.close();
     }
 
+    /**
+     * Convenience function to update time plots with time markers
+     *
+     * This track whether one time point is selected or both.  If both, this new
+     * time resets to one new time selection.
+     * @param newTime the new time selection
+     */
     private void updateTimePlots(double newTime) {
         XYPlot plotMagn = viewMagn.getChart().getXYPlot();
         XYPlot plotFreq = viewFreq.getChart().getXYPlot();
@@ -474,7 +497,7 @@ public class AnalysisDialogController {
 
     /**
      * This function draws frequency lines in both the PSD plot and the Instantaneous frequency plot
-     * @param newFreq
+     * @param newFreq The new selected frequency
      */
     private void updateFrequencyPlots(double newFreq) {
         XYPlot plotPSD = viewPSD.getChart().getXYPlot();
@@ -515,10 +538,22 @@ public class AnalysisDialogController {
         }
     }
 
+    /**
+     * Handle the magnitude plot interaction
+     * @param event Mouse click on the magnitude plot
+     * @param x The horizontal position of the click
+     * @param y The vertical position of the click
+     */
     private void handleMagnInteraction(MouseEvent event, double x, double y) {
         updateTimePlots(x);
     }
 
+    /**
+     * Handle the interaction to the frequency plot
+     * @param event The Mouse click
+     * @param x The X-Position of the click
+     * @param y The y-position of the click
+     */
     private void handleFreqInteraction(MouseEvent event, double x, double y) {
         if (event.isShiftDown()) {
             // Set up frequency
@@ -556,9 +591,11 @@ public class AnalysisDialogController {
                 plot.removeRangeMarker(noiseFloorMarker);
             }
             noiseFloorMarker = new ValueMarker(y);
-            noiseFloorMarker.setPaint(java.awt.Color.RED);
+            noiseFloorMarker.setPaint(java.awt.Color.CYAN);
             noiseFloorMarker.setLabel("Noise: " + String.format("%.1f dB", y));
+            noiseFloorMarker.setStroke(new BasicStroke(2));
             plot.addRangeMarker(noiseFloorMarker);
+
             this.currentNoiseFloor = y;
         } else {
             // ====================================================================================
@@ -568,9 +605,11 @@ public class AnalysisDialogController {
                 plot.removeRangeMarker(passbandMarker);
             }
             passbandMarker = new ValueMarker(y);
-            passbandMarker.setPaint(java.awt.Color.GREEN);
+            passbandMarker.setPaint(java.awt.Color.YELLOW);
             passbandMarker.setLabel("Signal: " + String.format("%.1f dB", y));
+            passbandMarker.setStroke(new BasicStroke(2));
             plot.addRangeMarker(passbandMarker);
+
 
             this.currentPassbandLevel = y;
         }
@@ -581,7 +620,7 @@ public class AnalysisDialogController {
 
     /**
      * Add Vertical Marker to display frequency range selection
-     * @param plot
+     * @param plot The plot to add the marker to
      * @param x The x-position for the vertical marker
      * @param label label of marker
      * @param color Color of marker
@@ -590,13 +629,22 @@ public class AnalysisDialogController {
         ValueMarker marker = new ValueMarker(x);
         marker.setPaint(color);
         marker.setLabel(label);
+        marker.setStroke(new BasicStroke(2));
         plot.addDomainMarker(marker);
     }
 
+    /**
+     * Add horizontal marker to the plot
+     * @param plot The plot to modify
+     * @param x The value of the marker
+     * @param label The label to apply to the marker
+     * @param color The color of the marker
+     */
     private void addHorizontalMarker(XYPlot plot, double x, String label, java.awt.Color color) {
         ValueMarker marker = new ValueMarker(x);
         marker.setPaint(color);
         marker.setLabel(label);
+        marker.setStroke(new BasicStroke(2));
         plot.addRangeMarker(marker);
     }
 
@@ -606,8 +654,6 @@ public class AnalysisDialogController {
      * Calculate and display metrics selected by user
      */
     private void updatePsdMetrics() {
-        // XYPlot plot = viewPSD.getChart().getXYPlot();
-
         // Retrieve values from markers (assuming you stored them as member variables)
         double snr = currentPassbandLevel - currentNoiseFloor;
         double centerFreq = (userSelectHighFreq + userSelectLowFreq) / 2.0;
@@ -667,6 +713,10 @@ public class AnalysisDialogController {
         }
     }
 
+    /**
+     * Add measurements tot he comments section
+     * @param e event of clicking the button
+     */
     @FXML
     private void handleAddMeasurements(ActionEvent e) {
         // append to comment area
