@@ -10,7 +10,6 @@ actor user
 participant client
 participant server
 
-
 opt Discover Capability
     user ->> client: Add server
     client ->> server: "Request API"
@@ -33,8 +32,8 @@ The REST API can be obtained through a JSON configuration.  The configuration lo
 | Check Schema | `/v3/api-docs` | `openapi.json` | `/api/schema` | `/openapi.json` | `/swagger/doc.json` |
 | Addtional Steps | Add springdoc-open-starter-webmvc-ui |
 
-* Spring Boot Example
-* FastAPI Example
+* Spring Boot [Example](./example_springboot_post.json)
+* FastAPI [Example](./example_fastapi.json)
 
 | Field | Description | SpringBoot | FastAPI |
 | :-: | :-: | :-: | :-: |
@@ -46,7 +45,7 @@ The REST API can be obtained through a JSON configuration.  The configuration lo
 
 ### REST Limitations
 
-Within this application, it makes sense to extract some features to pass to REST services.  This can be performed through GET.
+Within this application, it makes sense to extract some features to pass to REST services.  This can be performed through GET.  A set of parameters are extracted from the annotation (duration, bandwidth, center frequency).  The parameter is matched with the schema data types.  If match, the option is included in a combobox for simple entering.
 
 One concern is the size of the input data.  Passing high sample rate IQ data for more complex analysis will be expensive.
 
@@ -57,6 +56,8 @@ One concern is the size of the input data.  Passing high sample rate IQ data for
     * With high precision there can be 300 % increase in representation size.
     * Truncated precision can be used to reduce bandwidth but at the cost of signal integrity.
   * Base64 Encoding - Increase bytewise size by 33 %.
+
+**NOTE** This is a reason why GRPC maybe more appropriate with better efficiency of representing and transferring the IQ data.  But for now the REST service can be applied to support passing a short burst in being redirected to external functions with a less strict contract.
 
 ### Paths
 
@@ -70,7 +71,6 @@ One concern is the size of the input data.  Passing high sample rate IQ data for
 ### Dynamic Object
 
 This follows from [Example Spring Boot Post](./example_springboot_post.json).
-
 
 ~~~mermaid
 classDiagram
