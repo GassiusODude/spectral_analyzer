@@ -361,6 +361,23 @@ public class AnalysisDialogController {
         }
     }
 
+    /**
+     * Format Frequency
+     * @param freq Input frequency value
+     * @return The formatted string
+     */
+    public String formatFreq(double freq) {
+        if (freq >= 1e9) {
+            return String.format("%.6f GHz", freq / 1e9);
+        } else if (freq >= 1e6) {
+            return String.format("%.6f MHz", freq / 1e6);
+        } else if (freq >= 1e3) {
+            return String.format("%.6f kHz", freq / 1e3);
+        } else {
+            return String.format("%.6f Hz", freq);
+        }
+    }
+
 
     /**
      * The entry point to this dialog from the main application
@@ -689,9 +706,11 @@ public class AnalysisDialogController {
             activeAnnotation.setSampleCount(nSamples);
 
             txtAnnotTime.setText(
-                String.format("Updated Time from %s to %s",
+                String.format("Updated Time from %s to %s (Duration = %s)",
                     formatTime(userSelectStartTime),
-                    formatTime(userSelectStopTime)));
+                    formatTime(userSelectStopTime),
+                    formatTime(userSelectStopTime - userSelectStartTime)
+                ));
             ADC_LOGGER.info("Annotation Time updated from user selection.");
         }
     }
@@ -707,8 +726,11 @@ public class AnalysisDialogController {
             activeAnnotation.setFreqLowerEdge(userSelectLowFreq);
             activeAnnotation.setFreqUpperEdge(userSelectHighFreq);
             txtAnnotFreq.setText(
-                String.format("Updated Frequency from %.3f MHz to %.3f MHz",
-                    userSelectLowFreq / 1e6, userSelectHighFreq / 1e6));
+                String.format("Updated Frequency from %s to %s (Bandwidth = %s)",
+                    formatFreq(userSelectLowFreq),
+                    formatFreq(userSelectHighFreq),
+                    formatFreq(userSelectHighFreq - userSelectLowFreq)
+                ));
             ADC_LOGGER.info("Annotation frequencies updated from PSD markers.");
         }
     }
