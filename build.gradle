@@ -10,7 +10,7 @@ plugins {
 }
 
 group = 'net.kcundercover'
-version = '0.2'
+version = '0.2.1'
 description = 'Demo project for Spring Boot'
 
 java {

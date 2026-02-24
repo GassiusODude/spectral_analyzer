@@ -875,12 +875,10 @@ public class MainController {
         double sampleRate = sigMfHelper.getMetadata().global().sampleRate();
         double centerFreq = sigMfHelper.getMetadata().captures().get(0).frequency();
 
-
         long offsetInSamples = annot.getSampleStart() - currentSampleOffset;
         double x = (double) offsetInSamples / fftSize;
         double width = (double) annot.getSampleCount() / fftSize;
 
-        // 2. Calculate Vertical (Frequency) Position
         // Map Frequency back to 0.0-1.0 range of the current capture bandwidth
         double bw = sampleRate;
         double fLowRel = (annot.getFreqLowerEdge() - (centerFreq - bw / 2)) / bw;
@@ -894,8 +892,16 @@ public class MainController {
         rect.setY(y);
         rect.setHeight(height);
         rect.setVisible(x + width > 0 && x < canvasW);
+        // NOTE: check for custom color provided the label for this annotation
+        if (annotationStyles.containsKey(annot.getLabel())) {
+            Color styleColor = annotationStyles.get(annot.getLabel());
+            rect.setStroke(styleColor);
+            rect.setFill(styleColor.deriveColor(0, 1, 1, 0.3)); // apply 0.3 alpha to the fill
+        } else {
+            rect.setStroke(annotationColorPicker.getValue());
+            rect.setFill(annotationColorPicker.getValue().deriveColor(0, 1, 1, 0.3)); // apply 0.3 alpha to the fill
+        }
 
-        // if (!showAnnotationsCheckbox.isSelected()) {
         if (!menuItemShowAnnotations.isSelected()) {
             // keep hidden
             rect.setVisible(false);
@@ -1007,16 +1013,6 @@ public class MainController {
         annotationMap.forEach((rect, group) -> {
             // update rect (x,y,width, height) based on annotation information
             updateRect(rect, group.data);
-
-            // NOTE: check for custom color provided the label for this annotation
-            if (annotationStyles.containsKey(group.label.getText())) {
-                Color styleColor = annotationStyles.get(group.label.getText());
-                rect.setStroke(styleColor);
-                rect.setFill(styleColor.deriveColor(0, 1, 1, 0.3)); // apply 0.3 alpha to the fill
-            } else {
-                rect.setStroke(annotationColorPicker.getValue());
-                rect.setFill(annotationColorPicker.getValue().deriveColor(0, 1, 1, 0.3)); // apply 0.3 alpha to the fill
-            }
 
             // update labels and comment
             group.label.setText(group.data.getLabel());
