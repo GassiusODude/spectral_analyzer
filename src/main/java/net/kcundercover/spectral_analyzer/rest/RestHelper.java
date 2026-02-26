@@ -8,6 +8,7 @@ import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+// import java.security.DrbgParameters.Capability;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -85,12 +86,29 @@ public class RestHelper {
      * Query for the OpenAPI JSON for the paths, parameters/properties.
      * @param schemaUrl Path to the OpenAPI JSON schema
      */
-    public void discover(String schemaUrl)  {
+    public void discover(String schemaUrl, String apiKey) {
         ObjectMapper mapper = new ObjectMapper();
         try {
             HttpClient client = HttpClient.newHttpClient();
-            HttpRequest request = HttpRequest.newBuilder().uri(URI.create(schemaUrl)).build();
-            String jsonString = client.send(request, HttpResponse.BodyHandlers.ofString()).body();
+
+            // NOTE: support x-api-key
+            HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(schemaUrl))
+                .header("x-api-key", apiKey) // Pass the secret to FastAPI
+                .header("Accept", "application/json")
+                .GET()
+                .build();
+
+            // send request
+            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+
+            // Check for 403 Forbidden or 401 Unauthorized
+            if (response.statusCode() == 403 || response.statusCode() == 401) {
+                RH_LOGGER.error("Access Denied: Invalid API Key for {}", schemaUrl);
+                return;
+            }
+
+            String jsonString = response.body();
             JsonNode root = mapper.readTree(jsonString);
             String baseUrl = determineBaseUrl(root, schemaUrl);
 
@@ -100,7 +118,8 @@ public class RestHelper {
                     baseUrl,
                     entry.getKey(),
                     entry.getValue(),
-                    root
+                    root,
+                    apiKey
                 );
 
                 // Store them in the map
@@ -223,6 +242,8 @@ public class RestHelper {
                 client = HttpClient.newHttpClient();
                 HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create(cap.getBaseUrl() + cap.getPath() + queryString.toString()))
+                    .header("x-api-key", cap.getApiKey()) // Pass the secret to FastAPI
+                    .header("Accept", "application/json")
                     .GET() // Changed from .POST(...)
                     .build();
 

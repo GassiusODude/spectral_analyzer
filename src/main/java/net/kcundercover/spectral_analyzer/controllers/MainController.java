@@ -9,19 +9,19 @@ import javafx.beans.value.ChangeListener;
 import javafx.scene.control.Alert;
 import javafx.scene.control.Alert.AlertType;
 import javafx.scene.control.Button;
-
+import javafx.scene.control.ButtonBar;
 import javafx.scene.control.ButtonType;
 import javafx.scene.control.CheckBox;
 import javafx.scene.control.CheckMenuItem;
 import javafx.scene.control.ChoiceDialog;
 import javafx.scene.control.ColorPicker;
 import javafx.scene.control.ComboBox;
-
 import javafx.scene.control.Dialog;
+import javafx.scene.control.PasswordField;
 import javafx.scene.control.Slider;
 import javafx.scene.control.TextArea;
 import javafx.scene.control.TextField;
-import javafx.scene.control.TextInputDialog;
+// import javafx.scene.control.TextInputDialog;
 import javafx.scene.control.Tooltip;
 import javafx.scene.canvas.Canvas;
 import javafx.scene.canvas.GraphicsContext;
@@ -33,6 +33,7 @@ import javafx.scene.image.PixelWriter;      // for fast drawing
 import javafx.scene.input.MouseButton;
 import javafx.scene.input.MouseEvent;
 import javafx.scene.Node;
+import javafx.scene.layout.GridPane;
 import javafx.scene.layout.Pane;
 import javafx.scene.layout.StackPane;
 
@@ -1196,37 +1197,81 @@ public class MainController {
     // ============================================================================================
     // REST API Capabilities
     // ============================================================================================
-
     @FXML
-    private void handleConnect(ActionEvent event) {
-        Window owner = ((javafx.scene.control.MenuItem) event.getSource())
+private void handleConnect(ActionEvent event) {
+    // 1. Get the parent window for modality
+    Window owner = ((javafx.scene.control.MenuItem) event.getSource())
             .getParentPopup().getOwnerWindow();
-        // connect to a REST server.
-        TextInputDialog dialog = new TextInputDialog("http://localhost:8000/openapi.json");
-        dialog.initOwner(owner);
-        dialog.initModality(Modality.WINDOW_MODAL);
-        dialog.setTitle("Connect to REST Service");
-        dialog.setHeaderText("Enter OpenAPI Schema URL");
-        dialog.setContentText("Schema URL:");
-        Optional<String> result = dialog.showAndWait();
 
-        result.ifPresent(url -> {
-            try {
-                // Basic validation check
-                URI.create(url);
+    // 2. Create a custom Dialog
+    Dialog<Map<String, String>> dialog = new Dialog<>();
+    dialog.setTitle("Connect to Secure REST Service");
+    dialog.setHeaderText("Enter OpenAPI Schema URL and API Key");
+    dialog.initOwner(owner);
+    dialog.initModality(Modality.WINDOW_MODAL);
 
-                // Call your discovery method (should be run on a background thread)
-                MC_LOGGER.info("Attempting to connect to: " + url);
-                restHelper.discover(url);
+    // Add Connect and Cancel buttons
+    ButtonType connectButtonType = new ButtonType("Connect", ButtonBar.ButtonData.OK_DONE);
+    dialog.getDialogPane().getButtonTypes().addAll(connectButtonType, ButtonType.CANCEL);
 
-            } catch (IllegalArgumentException iae) {
-                showErrorAlert("Invalid URL", "The address provided is not a valid URL.");
-            } catch (Exception ex) {
-                showErrorAlert("Invalid URL",  ex.toString());
+    // 3. Build the UI Layout
+    GridPane grid = new GridPane();
+    grid.setHgap(10);
+    grid.setVgap(10);
+    grid.setPadding(new Insets(20, 150, 10, 10));
+
+    TextField urlField = new TextField("https://localhost:8000/openapi.json");
+    urlField.setPrefWidth(300);
+
+    // Use PasswordField for the API Key to hide the secret
+    PasswordField keyField = new PasswordField();
+    keyField.setPromptText("x-api-key");
+
+    grid.add(new Label("Schema URL:"), 0, 0);
+    grid.add(urlField, 1, 0);
+    grid.add(new Label("API Key:"), 0, 1);
+    grid.add(keyField, 1, 1);
+
+    dialog.getDialogPane().setContent(grid);
+
+    // 4. Convert the result when 'Connect' is clicked
+    dialog.setResultConverter(dialogButton -> {
+        if (dialogButton == connectButtonType) {
+            return Map.of(
+                "url", urlField.getText(),
+                "key", keyField.getText()
+            );
+        }
+        return null;
+    });
+
+    Optional<Map<String, String>> result = dialog.showAndWait();
+
+    result.ifPresent(data -> {
+        String url = data.get("url");
+        String apiKey = data.get("key");
+
+        try {
+            // 5. Enforce HTTPS (Security Best Practice)
+            if (!url.toLowerCase().startsWith("https://") && !url.contains("localhost")) {
+                throw new IllegalArgumentException("For security, only HTTPS connections are allowed.");
             }
 
-        });
-    }
+            URI.create(url);
+            MC_LOGGER.info("Attempting secure connection to: " + url);
+
+            // 6. Pass BOTH the URL and the Key to your helper
+            // You will need to update restHelper.discover() to accept the second parameter
+            restHelper.discover(url, apiKey);
+
+        } catch (IllegalArgumentException iae) {
+            showErrorAlert("Connection Denied", iae.getMessage());
+        } catch (Exception ex) {
+            showErrorAlert("Connection Error", ex.toString());
+        }
+    });
+}
+
 
 
     /**

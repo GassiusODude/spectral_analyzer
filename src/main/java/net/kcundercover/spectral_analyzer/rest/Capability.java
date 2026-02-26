@@ -28,6 +28,7 @@ public class Capability {
     private final JsonNode metadata;
     private final HttpMethod method;
     private final JsonNode schema;
+    private final String apiKey;
 
 
     /**
@@ -37,13 +38,16 @@ public class Capability {
      * @param method The HttpMethod (GET, POST)
      * @param metadata Json object from paths
      * @param root Root JSON object
+     * @param apiKey API key to using service
      */
-    private Capability(String baseUrl, String path, HttpMethod method, JsonNode metadata, JsonNode root) {
+    private Capability(String baseUrl, String path, HttpMethod method, JsonNode metadata, JsonNode root, String apiKey) {
         this.baseUrl = baseUrl;
         this.path = path;
         this.method = method;
         this.metadata = metadata;
+        this.apiKey = apiKey;
         this.schema = resolveProperties(metadata, root);
+
     }
 
     /**
@@ -52,9 +56,10 @@ public class Capability {
      * @param path The paths from the base URL
      * @param pathNode The Json object representing the path
      * @param root The root node of hte OpenAPI json.path.
+     * @param apiKey The API key to access the REST service
      * @return THe list of capabilities found.
      */
-    public static List<Capability> fromPathNode(String baseUrl, String path, JsonNode pathNode, JsonNode root) {
+    public static List<Capability> fromPathNode(String baseUrl, String path, JsonNode pathNode, JsonNode root, String apiKey) {
         List<Capability> discovered = new ArrayList<>();
         String[] methodsList = {"get", "post", "put", "delete"};
 
@@ -62,7 +67,7 @@ public class Capability {
             if (pathNode.has(currMethod)) {
                 HttpMethod httpMethod = HttpMethod.fromString(currMethod);
                 if (httpMethod != null) {
-                    discovered.add(new Capability(baseUrl, path, httpMethod, pathNode.get(currMethod), root));
+                    discovered.add(new Capability(baseUrl, path, httpMethod, pathNode.get(currMethod), root, apiKey));
                 }
             }
         }
@@ -124,6 +129,10 @@ public class Capability {
      */
     public String getPath() {
         return path;
+    }
+
+    public String getApiKey() {
+        return apiKey;
     }
 
     /**
