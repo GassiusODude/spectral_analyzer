@@ -505,7 +505,7 @@ public class MainController {
 
             } catch (Exception e) {
                 e.printStackTrace();
-                showErrorAlert("Failed to load SigMF file", e.getMessage());
+                showErrorAlert(ownerWindow, "Failed to load SigMF file", e.getMessage());
             }
         }
     }
@@ -557,8 +557,11 @@ public class MainController {
      */
     @FXML
     private void handleAnalyzeSelection(ActionEvent event) {
+        Window owner = ((Node) event.getSource())
+            .getScene().getWindow();
         if (!selectionComplete) {
             showErrorAlert(
+                owner,
                 "Selection Incomplete",
                 "Select time/freq segment or click on annotation");
             return;
@@ -597,8 +600,7 @@ public class MainController {
         final double finalTargetFs = targetFs;
         final double finalStartTime = targetStart / inputFs;
         String dataType = sigMfHelper.getMetadata().global().datatype();
-        Window owner = ((Node) event.getSource())
-                .getScene().getWindow();
+
         // Run off-thread to avoid [lication Thread] freezes
         // ==========================================================
         // NOTE: Runs downconverter to supply analysis dialog
@@ -720,7 +722,12 @@ public class MainController {
         alert.initOwner(owner);
         alert.initModality(Modality.APPLICATION_MODAL);
         alert.setTitle("About Spectral Analyzer");
-        alert.setHeaderText("Spectral Analyzer v0.1");
+        String version = getClass().getPackage().getImplementationVersion();
+        if (version == null) {
+            alert.setHeaderText("Spectral Analyzer (in Development)");
+        } else {
+            alert.setHeaderText("Spectral Analyzer v" + version);
+        }
         alert.setContentText(
             "A JavaFX & Spring Boot application for signal processing.\n" +
             "Domain: net.kcundercover");
@@ -1154,8 +1161,9 @@ public class MainController {
 
 
     // Quick helper to show errors to the user
-    private void showErrorAlert(String header, String content) {
+    private void showErrorAlert(Window owner, String header, String content) {
         Alert alert = new Alert(AlertType.ERROR);
+        alert.initOwner(owner);
         alert.setHeaderText(header);
         alert.setContentText(content);
         alert.showAndWait();
@@ -1220,7 +1228,7 @@ private void handleConnect(ActionEvent event) {
     grid.setVgap(10);
     grid.setPadding(new Insets(20, 150, 10, 10));
 
-    TextField urlField = new TextField("https://localhost:8000/openapi.json");
+    TextField urlField = new TextField("http://localhost:8000/openapi.json");
     urlField.setPrefWidth(300);
 
     // Use PasswordField for the API Key to hide the secret
@@ -1265,9 +1273,9 @@ private void handleConnect(ActionEvent event) {
             restHelper.discover(url, apiKey);
 
         } catch (IllegalArgumentException iae) {
-            showErrorAlert("Connection Denied", iae.getMessage());
+            showErrorAlert(owner, "Connection Denied", iae.getMessage());
         } catch (Exception ex) {
-            showErrorAlert("Connection Error", ex.toString());
+            showErrorAlert(owner, "Connection Error", ex.toString());
         }
     });
 }
@@ -1280,13 +1288,17 @@ private void handleConnect(ActionEvent event) {
      */
     @FXML
     private void showChooseCapability(ActionEvent event) {
+        Window owner = ((javafx.scene.control.MenuItem) event.getSource())
+                        .getParentPopup().getOwnerWindow();
         if (!selectionComplete) {
             showErrorAlert(
+                owner,
                 "Selection Incomplete",
                 "Select time/freq segment or click on annotation");
             return;
         } else if (selectionAnnotation == null){
             showErrorAlert(
+                owner,
                 "Select an annotation",
                 "Click/Select an annotation first");
             return;
@@ -1320,8 +1332,7 @@ private void handleConnect(ActionEvent event) {
 
             // NOTE: return to UI thread
             Platform.runLater(() -> {
-                Window owner = ((javafx.scene.control.MenuItem) event.getSource())
-                                    .getParentPopup().getOwnerWindow();
+
 
                 ChoiceDialog<String> dialog = new ChoiceDialog<>();
                 dialog.setTitle("Select Capability");
@@ -1344,7 +1355,8 @@ private void handleConnect(ActionEvent event) {
             });
         })
         .exceptionally(ex -> {
-            Platform.runLater(() -> showErrorAlert("DSP Error", ex.getMessage()));
+            Platform.runLater(() -> showErrorAlert(
+                owner, "DSP Error", ex.getMessage()));
             return null;
         });
     }

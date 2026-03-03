@@ -1,10 +1,14 @@
 package net.kcundercover.spectral_analyzer.data;
 
-
-import java.time.Instant;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
+import java.time.LocalDateTime;
 import java.util.Map;
 import java.util.HashMap;
 import java.util.List;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import net.kcundercover.spectral_analyzer.sigmf.SigMfAnnotation;
@@ -81,18 +85,24 @@ public class IqData {
      * @return The updated date time string.
      */
     public static String getNewTimestamp(String origIsoString, long sampleStart, double sampleRate) {
-        // Load: Parse the ISO 8601 string (e.g., "2023-10-01T12:00:00Z")
-        Instant originalInstant = Instant.parse(origIsoString);
+        // Remove 'Z' if present to avoid parsing conflicts with LocalDateTime
+        String cleanIso = origIsoString.endsWith("Z") ?
+                        origIsoString.substring(0, origIsoString.length() - 1) : origIsoString;
+
+        // Parse as a local date time (handles the microsecond precision automatically)
+        LocalDateTime ldt = LocalDateTime.parse(cleanIso);
+
+        // Convert to OffsetDateTime by assuming UTC (SigMF Standard)
+        OffsetDateTime original = ldt.atOffset(ZoneOffset.UTC);
 
         // Calculate offset in seconds and add to the instant
-        // Note: Using nanoseconds for maximum precision
-        double offsetSeconds = sampleStart / sampleRate;
+        double offsetSeconds = (double) sampleStart / sampleRate;
         long offsetNanos = (long) (offsetSeconds * 1_000_000_000L);
 
-        Instant newInstant = originalInstant.plusNanos(offsetNanos);
+        OffsetDateTime newTime = original.plusNanos(offsetNanos);
 
-        // Format: Convert back to a SigMF-compliant string
-        return newInstant.toString();
+        // Format back to SigMF-compliant UTC string (e.g., 2020-12-20T17:32:07.142626Z)
+        return newTime.format(DateTimeFormatter.ISO_INSTANT);
     }
 
     /**
@@ -138,6 +148,61 @@ public class IqData {
         long numSamples = (long) this.iqSamples[0].length;
         dataContainer.put("duration", ((double) numSamples) / sampleRate);
         dataContainer.put("bandwidth", this.bandwidth);
+
+        return dataContainer;
+    }
+
+    /**
+     * Get the interleaved byte array
+     * @param format (float32, int16)
+     * @return Bytes array from the double[][]
+     */
+    public byte[] getInterleavedBinary(String format) {
+        int numSamples = iqSamples[0].length;
+        if ("float32".equalsIgnoreCase(format)) {
+            // 4 bytes per float * 2 (I and Q)
+            ByteBuffer buffer = ByteBuffer.allocate(numSamples * 8);
+            buffer.order(ByteOrder.LITTLE_ENDIAN); // Most common for Python/NumPy
+
+            for (int i = 0; i < numSamples; i++) {
+                buffer.putFloat((float) iqSamples[0][i]); // I (Real)
+                buffer.putFloat((float) iqSamples[1][i]); // Q (Imag)
+            }
+            return buffer.array();
+
+        } else if ("int16".equalsIgnoreCase(format)) {
+            // 2 bytes per short * 2 (I and Q)
+            ByteBuffer buffer = ByteBuffer.allocate(numSamples * 4);
+            buffer.order(ByteOrder.LITTLE_ENDIAN);
+
+            for (int i = 0; i < numSamples; i++) {
+                // Note: Ensure doubles are scaled to the -32768 to 32767 range first
+                buffer.putShort((short) (32767 * iqSamples[0][i]));
+                buffer.putShort((short) (32767 * iqSamples[1][i]));
+            }
+            return buffer.array();
+        }
+        throw new IllegalArgumentException(
+            "Unsupported binary format: " + format);
+    }
+
+    /**
+     * Access the data buffer
+     * Create a Map to access the buffer as
+     *
+     *  * Interleaved Float32
+     *  * Interleaved Int16
+     *
+     * @return Return the byte buffers for
+     */
+    public Map<String, Object> getDataBuffer() {
+        Map<String, Object> dataContainer = new HashMap<>();
+        dataContainer.put(
+            "IQ_BUFFER_FLOAT32",
+            getInterleavedBinary("float32"));
+        dataContainer.put(
+            "IQ_BUFFER_INT16",
+            getInterleavedBinary("int16"));
 
         return dataContainer;
     }

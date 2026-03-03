@@ -8,7 +8,6 @@ import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
-// import java.security.DrbgParameters.Capability;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -34,7 +33,6 @@ import javafx.stage.Window;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -140,60 +138,71 @@ public class RestHelper {
      * @param cap Capability to run.
      * @param userInputs Map of inputs
      */
-    public void executeCapability(Capability cap, Map<String, Object> userInputs) {
+    public void executeCapability(Window owner, Capability cap, Map<String, Object> userInputs, IqData iq) {
         if (cap == null) {
             return;
         }
 
         ObjectMapper mapper = new ObjectMapper();
-        ObjectNode body = mapper.createObjectNode();
+
 
         // Initialize Client and Build Request
-        HttpClient client = HttpClient.newHttpClient();
-
+        // HttpClient client = HttpClient.newHttpClient();
+        HttpClient client = HttpClient.newBuilder()
+            .version(HttpClient.Version.HTTP_1_1) // <--- ADD THIS LINE
+            .followRedirects(HttpClient.Redirect.NORMAL)
+            .build();
         if (cap.getMethod() == HttpMethod.POST) {
             // ============================================================
             // Prepare POST request
             // ============================================================
+            final byte[][] binaryPayloadWrapper = new byte[1][];
+            StringBuilder queryParams = new StringBuilder("?");
+
+
             userInputs.forEach((key, value) -> {
-                String schemaType = cap.getSchema().path(key).path("type").asText();
-                RH_LOGGER.debug("{} with value of type {}, Schema = {}",
-                    key, value.getClass().getName(), schemaType);
+                // Check if this is our special binary buffer key
+                if ("Binary Request Body".equals(key)) {
+                    // Pull the actual byte[] from your data mapping using the selected key
+                    String selectedBufferKey = value.toString();
+                    binaryPayloadWrapper[0] = (byte[]) iq.getDataBuffer().get(selectedBufferKey);
+                    RH_LOGGER.info("key = " + key + "\tSelected = " + selectedBufferKey);
 
-                if (value instanceof Integer) {
-                    body.put(key, (Integer) value);
-                } else if (value instanceof Double) {
-                    body.put(key, (Double) value);
-                } else if (value instanceof String) {
-                    if ("array".equals(schemaType)) {
-                        RH_LOGGER.info("Treating {} as JSON Tree", key);
-                        try {
-                            JsonNode tmpArray = mapper.readTree(value.toString());
-                            // body.set(key, tmpArray);
-                            body.putPOJO(key, tmpArray);
-                            RH_LOGGER.info("Body = {}", tmpArray.toPrettyString());
-                        } catch(JsonProcessingException jpe) {
-                            RH_LOGGER.warn("Json process error " + jpe.toString());
-                        }
-                    } else {
-                        body.put(key, (String) value);
-                        RH_LOGGER.debug("Treating {} as String for shema {}", key, schemaType);
-                    }
-                } else if (value instanceof Boolean b) {
-
-                    body.put(key, b);
                 } else {
-                    RH_LOGGER.info("Got {} = {}, key={} of class ={}", key, value, key, value.getClass().toString());
+                    // Everything else is a Query Parameter for the URL
+                    if (queryParams.length() > 1) {
+                        queryParams.append("&");
+                    }
+                    queryParams.append(key).append("=").append(value.toString());
                 }
             });
+
+            byte[] binaryPayload = binaryPayloadWrapper[0];
 
             // ============================================================
             // Send POST request
             // ============================================================
+            // Construct the URL with query parameters
+            String fullUrl = cap.getBaseUrl() + cap.getPath() + queryParams.toString();
+
+            HttpRequest.Builder requestBuilder = HttpRequest.newBuilder()
+                .uri(URI.create(fullUrl))
+                .header("Content-Type", "application/octet-stream");
+
+            // Handle the Body: If we have binary data, send it raw; otherwise, send empty
+            if (binaryPayload != null) {
+                RH_LOGGER.trace("Binary Payload added to request with " + binaryPayload.length + " bytes");
+                requestBuilder.POST(HttpRequest.BodyPublishers.ofByteArray(binaryPayload));
+            } else {
+                RH_LOGGER.trace("Binary Payload (no body) added to request");
+                requestBuilder.POST(HttpRequest.BodyPublishers.noBody());
+            }
+
+
             HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(cap.getBaseUrl() + cap.getPath()))
-                .header("Content-Type", "application/json")
-                .POST(HttpRequest.BodyPublishers.ofString(body.toString()))
+                .uri(URI.create(fullUrl))
+                .header("Content-Type", "application/octet-stream")
+                .POST(HttpRequest.BodyPublishers.ofByteArray(binaryPayload))
                 .build();
 
             client.sendAsync(request, HttpResponse.BodyHandlers.ofString())
@@ -202,22 +211,41 @@ public class RestHelper {
                         String jsonString = response.body();
                         int statusCode = response.statusCode();
                         if (statusCode >= 200 && statusCode < 300) {
+
                             try {
                                 JsonNode jsonResponse = mapper.readTree(jsonString);
                                 RH_LOGGER.info("Success: Response = " + jsonResponse.toPrettyString());
-                            } catch (Exception e) {
-                                RH_LOGGER.info("Success Status, but error parsing response: " + jsonString);
-                                showError("Success Status error parsing", "Success Status received, failed to parse response");
+
+                                // ============================================================
+                                // Prepare Information Dialog to show response
+                                // ============================================================
+                                TextArea textArea = new TextArea(jsonResponse.toPrettyString());
+                                textArea.setEditable(false);
+                                textArea.setWrapText(true);
+                                textArea.setPrefHeight(300);
+                                textArea.setPrefWidth(500);
+                                Alert alert = new Alert(Alert.AlertType.INFORMATION);
+                                alert.initOwner(owner);
+                                alert.setTitle("RESTS POST Results");
+                                alert.setHeaderText("Server Response (Status: " + response.statusCode() + ")");
+                                alert.getDialogPane().setContent(textArea);
+                                alert.showAndWait();
+                            } catch (JsonProcessingException jpe) {
+                                showError(owner, "Error processing JSON response", jpe.toString());
                             }
                         } else {
-                            RH_LOGGER.error("Server Error " + statusCode + ": " + jsonString);
-                            showError("Server Error", "Server return an error (" + statusCode + ")");
-                        }
+                            showError(owner, "Server Error (" + statusCode + ")", response.body());
 
+                            if (statusCode == 422) {
+                                RH_LOGGER.error("Status Code (422) Details: " + response.body());
+                            } else if (statusCode == 400) {
+                                RH_LOGGER.error("Status Code (400) Details: " + response.body());
+                            }
+                        }
                     });
                 })
                 .exceptionally(ex -> {
-                    Platform.runLater(() -> showError("Request Failed", ex.getMessage()));
+                    Platform.runLater(() -> showError(owner, "Request Failed", ex.getMessage()));
                     return null;
                 });
 
@@ -273,15 +301,16 @@ public class RestHelper {
                 textArea.setPrefHeight(300);
                 textArea.setPrefWidth(500);
                 Alert alert = new Alert(Alert.AlertType.INFORMATION);
+                alert.initOwner(owner);
                 alert.setTitle("Identification Result");
                 alert.setHeaderText("Server Response (Status: " + response.statusCode() + ")");
                 alert.getDialogPane().setContent(textArea);
                 alert.showAndWait();
 
             } catch (IOException ioe) {
-                showError("IOException", ioe.getMessage());
+                showError(owner, "IOException", ioe.getMessage());
             } catch (InterruptedException ie) {
-                showError("Interupted Error", ie.getMessage());
+                showError(owner, "Interupted Error", ie.getMessage());
             }
         }
 
@@ -364,7 +393,7 @@ public class RestHelper {
         int row = 0;
 
         Map<String, Object> dataMap = iq.getData();
-
+        Map<String, Object> dataMapBuffer = iq.getDataBuffer();
         for (var entry : schemaProperties.properties()) {
             String propertyName = entry.getKey();
             JsonNode propertyDetails = entry.getValue();
@@ -379,17 +408,39 @@ public class RestHelper {
             // ----------------------------------------------------------------
             // Prepare the input control UI in current row
             // ----------------------------------------------------------------
-            if (propertyDetails.has("enum")) {
+            if ("buffer".equals(type)) {
+                // NOTE: buffer type, get from IQ data
+                ComboBox<String> combo = new ComboBox<>();
+                for (Map.Entry<String, Object> dataEntry : dataMapBuffer.entrySet()) {
+                    String key = dataEntry.getKey();
+                    Object value = dataEntry.getValue();
+
+                    // Only add if the value is actually a binary format
+                    if (value instanceof byte[] || value instanceof java.nio.ByteBuffer) {
+                        combo.getItems().add(key);
+                    }
+                }
+                inputControl = combo;
+
+            } else if (propertyDetails.has("enum")) {
+                RH_LOGGER.info("Enum for " + propertyName + ":\n" + propertyDetails.toPrettyString());
                 ComboBox<String> combo = new ComboBox<>();
                 propertyDetails.get("enum").forEach(val -> combo.getItems().add(val.asText()));
                 inputControl = combo;
             } else if ("integer".equals(type)) {
                 // Spinner for integers: Min, Max, Default
-                inputControl = new Spinner<>(new SpinnerValueFactory.IntegerSpinnerValueFactory(0, Integer.MAX_VALUE, 0));
+                int min = propertyDetails.path("minimum").asInt(0);
+                int max = propertyDetails.path("maximum").asInt(Integer.MAX_VALUE);
+                int defaultValue = propertyDetails.path("default").asInt(0);
+                inputControl = new Spinner<>(new SpinnerValueFactory.IntegerSpinnerValueFactory(
+                    min, max, defaultValue));
                 ((Spinner<?>) inputControl).setEditable(true);
             } else if ("number".equals(type)) {
+                double defaultValue = propertyDetails.path("default").asDouble(0.0);
+
                 // Spinner for doubles: Min, Max, Default, Amount to step by
-                inputControl = new Spinner<>(new SpinnerValueFactory.DoubleSpinnerValueFactory(-Double.MAX_VALUE, Double.MAX_VALUE, 0.0, 0.1));
+                inputControl = new Spinner<>(new SpinnerValueFactory.DoubleSpinnerValueFactory(
+                    -Double.MAX_VALUE, Double.MAX_VALUE, defaultValue, 0.1));
                 ((Spinner<?>) inputControl).setEditable(true);
 
             } else if ("boolean".equals(type)) {
@@ -402,12 +453,20 @@ public class RestHelper {
             // ----------------------------------------------------------------
             // Prepare combo box for simple input in this row
             // ----------------------------------------------------------------
-            // update the keys to properties with matching data types
-            for (Map.Entry<String, Object> dataEntry: dataMap.entrySet()) {
-                String key = dataEntry.getKey();
-                Object value = dataEntry.getValue();
-                if (isTypeCompatible(value, type)) {
+            if ("buffer".equals(type)) {
+                for (Map.Entry<String, Object> dataEntry: dataMapBuffer.entrySet()) {
+                    String key = dataEntry.getKey();
+                    Object value = dataEntry.getValue();
                     comboData.getItems().add(key);
+                }
+            } else {
+                // update the keys to properties with matching data types
+                for (Map.Entry<String, Object> dataEntry: dataMap.entrySet()) {
+                    String key = dataEntry.getKey();
+                    Object value = dataEntry.getValue();
+                    if (isTypeCompatible(value, type)) {
+                        comboData.getItems().add(key);
+                    }
                 }
             }
 
@@ -432,12 +491,14 @@ public class RestHelper {
 
     /**
      * Show dialog for an error
+     * @param owner Window being called from to center the new dialog
      * @param title Title on the dialog
      * @param content Content of the dialog
      */
-    private void showError(String title, String content) {
+    private void showError(Window owner, String title, String content) {
         Platform.runLater(() -> {
             Alert alert = new Alert(Alert.AlertType.ERROR);
+            alert.initOwner(owner);
             alert.setTitle(title);
             alert.setHeaderText(null);
             alert.setContentText(content);
@@ -494,7 +555,7 @@ public class RestHelper {
         });
 
         dialog.showAndWait().ifPresent(inputs -> {
-            executeCapability(cap, inputs);
+            executeCapability(owner, cap, inputs, iq);
         });
     }
 

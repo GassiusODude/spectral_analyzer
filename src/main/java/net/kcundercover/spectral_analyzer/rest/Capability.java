@@ -3,13 +3,10 @@ package net.kcundercover.spectral_analyzer.rest;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-
 import java.util.ArrayList;
 import java.util.List;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
 
 
 /**
@@ -47,7 +44,6 @@ public class Capability {
         this.metadata = metadata;
         this.apiKey = apiKey;
         this.schema = resolveProperties(metadata, root);
-
     }
 
     /**
@@ -81,17 +77,19 @@ public class Capability {
      * @return The Json Node
      */
     private JsonNode resolveProperties(JsonNode operation, JsonNode root) {
-        // NOTE: Get the RequestBody
-        JsonNode schema = operation.at("/requestBody/content/application~1json/schema");
+        JsonNode jsonSchema = operation.at("/requestBody/content/application~1json/schema");
 
-        if (!schema.isMissingNode()) {
-            if (schema.has("$ref")) {
+        // try to find Octet-Stream
+        JsonNode binarySchema = operation.at("/requestBody/content/application~1octet-stream/schema");
+
+        if (!jsonSchema.isMissingNode()) {
+            if (jsonSchema.has("$ref")) {
                 // references to
                 CAP_LOGGER.info("Reference link found");
-                return root.at(schema.get("$ref").asText().substring(1) + "/properties");
+                return root.at(jsonSchema.get("$ref").asText().substring(1) + "/properties");
             }
             CAP_LOGGER.info("schema is not missing node()");
-            return schema.path("properties");
+            return jsonSchema.path("properties");
         }
 
         // Try to get parameters for GET/DELETE (Parameters Array)
@@ -100,14 +98,22 @@ public class Capability {
 
         ObjectMapper mapper = new ObjectMapper();
         if (parameters.isArray()) {
-            CAP_LOGGER.info("Capabilities has array of parameter");
+            CAP_LOGGER.trace("Capabilities has array of parameter");
             ObjectNode flattenedParams = mapper.createObjectNode();
+            if (binarySchema != null) {
+                CAP_LOGGER.trace("Detected Binary Schema");
+                ObjectNode binaryParam = mapper.createObjectNode();
+                binaryParam.put("type", "buffer");
+                binaryParam.put("description", "Byte Array");
 
+                flattenedParams.set("Binary Request Body", binaryParam);
+
+            }
             for (JsonNode param : parameters) {
                 String name = param.path("name").asText();
                 JsonNode paramSchema = param.path("schema");
                 flattenedParams.set(name, paramSchema);
-                CAP_LOGGER.info("Parmeter({}) with {}", name, paramSchema.toString());
+                CAP_LOGGER.info("Parameter({}) with {}", name, paramSchema.toString());
             }
             return flattenedParams;
         }
@@ -177,6 +183,4 @@ public class Capability {
                 this.schema.toPrettyString());
         }
     }
-
-
 }
