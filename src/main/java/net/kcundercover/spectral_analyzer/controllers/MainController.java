@@ -593,7 +593,7 @@ public class MainController {
             targetWidth = (long) (selectionStartWidthSamples * 1.1) + (selectionStartSample - targetStart);
         }
 
-        int down = (int) Math.ceil(inputFs / currBw);
+        int down = (int) Math.floor(inputFs / currBw);
 
         double targetFs = inputFs / down;
 
@@ -1316,13 +1316,15 @@ private void handleConnect(ActionEvent event) {
         // NOTE: extend time by
         long targetStart = selectionStartSample;
         long targetWidth = (long) selectionStartWidthSamples;
-        int down = (int) Math.ceil(inputFs / currBw);
+        int down = (int) Math.floor(inputFs / currBw);
         double targetFs = inputFs / down;
 
         final double finalTargetFs = targetFs;
         // final double finalStartTime = targetStart / inputFs;
         String dataType = sigMfHelper.getMetadata().global().datatype();
-
+        MC_LOGGER.info(String.format(
+            "Down sample by %d from %.2f to %.2f",
+            down, inputFs, targetFs));
         asyncDownConvertService.extractAndDownConvertAsync(
                 sigMfHelper.getDataBuffer(), targetStart, (int) targetWidth, dataType, center / inputFs, down, fastDownConverter.isSelected())
             .thenAccept(data -> {
