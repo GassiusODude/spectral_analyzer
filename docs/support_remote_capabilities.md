@@ -14,6 +14,7 @@ opt Discover Capability
     user ->> client: Add server
     client ->> server: "Request API"
     server ->> client: "Response JSON"
+    note over client: Client now knows parameter and output schema
 end
 opt configure capability
     note over user,client: Map UI info to request fields
@@ -47,17 +48,25 @@ The REST API can be obtained through a JSON configuration.  The configuration lo
 
 Within this application, it makes sense to extract some features to pass to REST services.  This can be performed through GET.  A set of parameters are extracted from the annotation (duration, bandwidth, center frequency).  The parameter is matched with the schema data types.  If match, the option is included in a combobox for simple entering.
 
+| Extracted Parameter | Type | Description |
+| :-: | :-: | :-: |
+| `samplingRate` | float | Downconverted sampling rate |
+| `centerFreq` | float | Center frequency of the current annotation |
+| `duration` | float | Based on annotation number time samples and downconverted sampling rate |
+| `bandwidth` | float | Based on annotation freq low and high |
+
 One concern is the size of the input data.  Passing high sample rate IQ data for more complex analysis will be expensive.
 
 * `Max Request Body`
   * In Spring Boot, there is a 10MB or 25 MB limit to the request body
 * Passing IQ (double[][])
-  * Comma Separated Values - Uses textual representation per double.
+  * The standard means of passing data is in JSON.  A Comma Separated Values (CSV) reprepresentation uses textual representation per double.
     * With high precision there can be 300 % increase in representation size.
     * Truncated precision can be used to reduce bandwidth but at the cost of signal integrity.
   * Base64 Encoding - Increase bytewise size by 33 %.
+  * As bytes in the Request.body does not require the extra encoding, but REST is still less efficient than gRPC due to the headers to the request.  gRPC uses HPACK compression for successive header
 
-**NOTE** This is a reason why GRPC maybe more appropriate with better efficiency of representing and transferring the IQ data.  But for now the REST service can be applied to support passing a short burst in being redirected to external functions with a less strict contract.
+For now the REST service can be applied to support passing a short burst in being redirected to external functions with a less strict contract and shared knowledge of the proto files required in gRPC.
 
 ### Paths
 
@@ -70,7 +79,18 @@ One concern is the size of the input data.  Passing high sample rate IQ data for
 
 ### Dynamic Object
 
-This follows from [Example Spring Boot Post](./example_springboot_post.json).
+**FastAPI**
+
+[FastAPI Example](fastapi_main.py) shows a basic implementation of the FastAPI server for baud estimates.  This shows something that works with the `Spectral Analyzer` for passing in IQ data through the request body.
+
+~~~bash
+  # NOTE: use uvicorn to host the FastAPI service locally
+  uvicorn kcss.main:app --port 8000
+~~~
+
+**SpringBoot**
+
+This follows from [Example Spring Boot POST Example](./example_springboot_post.json).
 
 ~~~mermaid
 classDiagram

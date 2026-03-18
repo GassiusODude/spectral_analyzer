@@ -112,6 +112,15 @@ public class Capability {
             for (JsonNode param : parameters) {
                 String name = param.path("name").asText();
                 JsonNode paramSchema = param.path("schema");
+
+                // NOTE: handle case where schema is defined in a reference
+                if (paramSchema.has("$ref")) {
+                    String refPath = paramSchema.get("$ref").asText();
+
+                    String jsonPointer = refPath.substring(1);
+                    paramSchema = root.at(jsonPointer);
+                }
+
                 flattenedParams.set(name, paramSchema);
                 CAP_LOGGER.info("Parameter({}) with {}", name, paramSchema.toString());
             }

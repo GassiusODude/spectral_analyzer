@@ -26,9 +26,10 @@ import javafx.scene.control.Spinner;
 import javafx.scene.control.SpinnerValueFactory;
 import javafx.scene.control.TextArea;
 import javafx.scene.control.TextField;
-
+import javafx.scene.control.TextFormatter;
 import javafx.scene.layout.GridPane;
 import javafx.stage.Window;
+import javafx.util.converter.DoubleStringConverter;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -173,7 +174,9 @@ public class RestHelper {
                     if (queryParams.length() > 1) {
                         queryParams.append("&");
                     }
-                    queryParams.append(key).append("=").append(value.toString());
+                    // NOTE: use encoding to avoid issues with spaces (" " -> "%20")
+                    String encodedValue = URLEncoder.encode(value.toString(), StandardCharsets.UTF_8);
+                    queryParams.append(key).append("=").append(encodedValue);
                 }
             });
 
@@ -226,7 +229,7 @@ public class RestHelper {
                                 textArea.setPrefWidth(500);
                                 Alert alert = new Alert(Alert.AlertType.INFORMATION);
                                 alert.initOwner(owner);
-                                alert.setTitle("RESTS POST Results");
+                                alert.setTitle("REST POST Results");
                                 alert.setHeaderText("Server Response (Status: " + response.statusCode() + ")");
                                 alert.getDialogPane().setContent(textArea);
                                 alert.showAndWait();
@@ -423,7 +426,7 @@ public class RestHelper {
                 inputControl = combo;
 
             } else if (propertyDetails.has("enum")) {
-                RH_LOGGER.info("Enum for " + propertyName + ":\n" + propertyDetails.toPrettyString());
+                RH_LOGGER.trace("Enum for " + propertyName + ":\n" + propertyDetails.toPrettyString());
                 ComboBox<String> combo = new ComboBox<>();
                 propertyDetails.get("enum").forEach(val -> combo.getItems().add(val.asText()));
                 inputControl = combo;
@@ -438,10 +441,21 @@ public class RestHelper {
             } else if ("number".equals(type)) {
                 double defaultValue = propertyDetails.path("default").asDouble(0.0);
 
-                // Spinner for doubles: Min, Max, Default, Amount to step by
-                inputControl = new Spinner<>(new SpinnerValueFactory.DoubleSpinnerValueFactory(
-                    -Double.MAX_VALUE, Double.MAX_VALUE, defaultValue, 0.1));
-                ((Spinner<?>) inputControl).setEditable(true);
+                // // Spinner for doubles: Min, Max, Default, Amount to step by
+                // inputControl = new Spinner<>(new SpinnerValueFactory.DoubleSpinnerValueFactory(
+                //     -Double.MAX_VALUE, Double.MAX_VALUE, defaultValue, 0.1));
+                // ((Spinner<?>) inputControl).setEditable(true);
+
+                TextField inputField = new TextField();
+                // Handle default value from your JSON
+                inputField.setText(String.valueOf(defaultValue));
+
+                TextFormatter<Double> formatter = new TextFormatter<>(new DoubleStringConverter(), defaultValue);
+                inputField.setTextFormatter(formatter);
+
+                // Access the value safely later
+                Double finalValue = formatter.getValue();
+                inputControl = inputField;
 
             } else if ("boolean".equals(type)) {
                 inputControl = new CheckBox();
@@ -449,6 +463,7 @@ public class RestHelper {
                 inputControl = new TextField();
                 ((TextField)inputControl).setPromptText(type);
             }
+            RH_LOGGER.trace("Property = " + propertyName + "\t(Type = " + type + ")");
 
             // ----------------------------------------------------------------
             // Prepare combo box for simple input in this row
@@ -478,12 +493,16 @@ public class RestHelper {
                 }
             });
 
-
             // ----------------------------------------------------------------
             // update grid
             // ----------------------------------------------------------------
             grid.add(inputControl, 1, row);
-            grid.add(comboData, 2, row);
+
+            // NOTE: check "buffer" or "enum",
+            //       both use ComboBox for inputField  already
+            if (!("buffer".equals(type) || propertyDetails.has("enum")) ) {
+                grid.add(comboData, 2, row);
+            }
             inputFields.put(propertyName, inputControl);
             row++;
         }
