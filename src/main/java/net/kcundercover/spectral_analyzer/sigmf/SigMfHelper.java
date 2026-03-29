@@ -50,8 +50,14 @@ public class SigMfHelper {
         // Memory Map the Data File
         try (RandomAccessFile raf = new RandomAccessFile(dataFile, "r");
              FileChannel channel = raf.getChannel()) {
-
-            this.dataBuffer = channel.map(FileChannel.MapMode.READ_ONLY, 0, channel.size());
+            // NOTE: was crashing on large data files with over 2 GB
+            //       This snippet limits to the max integer size
+            long safeSize = Math.min(channel.size(), (long) Integer.MAX_VALUE);
+            if (safeSize != channel.size()) {
+                SMH_LOGGER.info("Data file is large, limiting buffer to first 2 GB");
+            }
+            this.dataBuffer = channel.map(FileChannel.MapMode.READ_ONLY, 0, safeSize);
+            // this.dataBuffer = channel.map(FileChannel.MapMode.READ_ONLY, 0, channel.size());
 
             // Set Endianness based on SigMF datatype (e.g., cf32_le)
             if (this.metadata.global().datatype().endsWith("_le")) {

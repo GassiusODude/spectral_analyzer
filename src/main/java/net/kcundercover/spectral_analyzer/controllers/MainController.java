@@ -593,7 +593,14 @@ public class MainController {
             targetWidth = (long) (selectionStartWidthSamples * 1.1) + (selectionStartSample - targetStart);
         }
 
-        int down = (int) Math.floor(inputFs / currBw);
+        int tmpDown = (int) Math.floor(inputFs / currBw);
+        int down;
+        if (tmpDown == 0) {
+            // avoid downsample by 0.
+            down = 1;
+        } else {
+            down = tmpDown;
+        }
 
         double targetFs = inputFs / down;
 
