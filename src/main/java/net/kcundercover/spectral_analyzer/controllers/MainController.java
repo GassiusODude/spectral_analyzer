@@ -708,24 +708,32 @@ public class MainController {
             .getParentPopup().getOwnerWindow();
 
         try {
-            FXMLLoader loader = new FXMLLoader(getClass().getResource("annotation-table-dialog.fxml"));
+            FXMLLoader loader = new FXMLLoader(
+                getClass().getResource("annotation-table-dialog.fxml"));
             Parent root = loader.load();
 
             AnnotationController controller = loader.getController();
             var global = sigMfHelper.getMetadata().global();
             double sampleRate = global.sampleRate();
             controller.setAnnotations(this.annotationMap, sampleRate);
-            Stage stage = new Stage();
-            stage.initOwner(owner);
-            stage.setScene(new Scene(root));
-            stage.setOnCloseRequest(closeEvent -> {
-                // controller.performCleanup(); // Move your logger and data release here
-            });
 
-            stage.initModality(Modality.APPLICATION_MODAL); // Allows user to interact with both windows
-            stage.showAndWait();
+            Dialog<ButtonType> dialog = new Dialog<>();
+            dialog.setTitle("Table View Annotations");
+            dialog.initOwner(owner);
+            dialog.setResizable(true);
+            dialog.getDialogPane().setContent(root);
+            dialog.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
 
+            Optional<ButtonType> result = dialog.showAndWait();
+            if (result.isPresent() && result.get() == ButtonType.OK) {
+                // ACCEPT: User selected to accept changes made in the Table View
+                controller.updateMainAnnotations(sampleRate);
+                updateAnnotationDisplay();
 
+            } else {
+                // REJECT: Do nothing; the edits stay in the temporary AnnotationRow objects
+
+            }
         } catch (IOException e) {
             MC_LOGGER.error("Failed to open Annotation Table dialog", e);
         }
