@@ -70,6 +70,7 @@ import org.slf4j.LoggerFactory;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 
+import net.kcundercover.spectral_analyzer.data.AnnotationGroup;
 import net.kcundercover.spectral_analyzer.data.IqData;
 import net.kcundercover.spectral_analyzer.rest.Capability;
 import net.kcundercover.spectral_analyzer.rest.RestHelper;
@@ -158,21 +159,6 @@ public class MainController {
     @FXML private Button btnAnalyzeSelection;
 
 
-    /**
-     * AnnotationGroup is used to track the UI {@code label} and {@code rect})
-     * {@code tooltip} and the SigMFAnnotation {@code data}.
-     *
-     * {@code label} is used to show the type of annotation
-     * {@code rect} is a overlaying Rectangle to visually show time/frequency position
-     * {@code data} is the SigMF Annotation information.
-     * {@code tooltip} is the comment from the annotation shown as a tooltip for the rectangle.
-     */
-    private static class AnnotationGroup {
-        Rectangle rect;
-        Label label;
-        SigMfAnnotation data;
-        Tooltip tooltip;
-    }
 
     /** This mapping tracks the AnnotationGroup based on the rectangle overlay */
     private final Map<Rectangle, AnnotationGroup> annotationMap = new HashMap<>();
@@ -714,6 +700,36 @@ public class MainController {
     @FXML
     public void handleExit(ActionEvent event) {
         Platform.exit();
+    }
+
+    @FXML
+    public void handleTableView(ActionEvent event) {
+        Window owner = ((javafx.scene.control.MenuItem) event.getSource())
+            .getParentPopup().getOwnerWindow();
+
+        try {
+            FXMLLoader loader = new FXMLLoader(getClass().getResource("annotation-table-dialog.fxml"));
+            Parent root = loader.load();
+
+            AnnotationController controller = loader.getController();
+            var global = sigMfHelper.getMetadata().global();
+            double sampleRate = global.sampleRate();
+            controller.setAnnotations(this.annotationMap, sampleRate);
+            Stage stage = new Stage();
+            stage.initOwner(owner);
+            stage.setScene(new Scene(root));
+            stage.setOnCloseRequest(closeEvent -> {
+                // controller.performCleanup(); // Move your logger and data release here
+            });
+
+            stage.initModality(Modality.APPLICATION_MODAL); // Allows user to interact with both windows
+            stage.showAndWait();
+
+
+        } catch (IOException e) {
+            MC_LOGGER.error("Failed to open Annotation Table dialog", e);
+        }
+
     }
 
     /**

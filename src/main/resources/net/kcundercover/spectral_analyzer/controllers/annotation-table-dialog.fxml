@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.scene.layout.VBox?>
+<?import javafx.scene.control.Label?>
+<?import javafx.scene.control.TableView?>
+<?import javafx.scene.control.TableColumn?>
+<?import javafx.geometry.Insets?>
+<VBox spacing="10" xmlns:fx="http://javafx.com" fx:controller="net.kcundercover.spectral_analyzer.controllers.AnnotationController">
+    <padding>
+        <Insets top="10" right="10" bottom="10" left="10"/>
+    </padding>
+
+    <Label text="SigMF Annotations" style="-fx-font-size: 16px; -fx-font-weight: bold;"/>
+
+    <TableView fx:id="annotationTable" VBox.vgrow="ALWAYS">
+        <columns>
+            <TableColumn fx:id="labelCol" text="Label" prefWidth="100" />
+            <TableColumn fx:id="descCol" text="Desc" prefWidth="150" />
+            <TableColumn fx:id="startCol" text="Time Start" prefWidth="80" />
+            <TableColumn fx:id="durationCol" text="Duration" prefWidth="80" />
+            <TableColumn fx:id="centerFreqCol" text="Center Freq" prefWidth="100" />
+            <TableColumn fx:id="bandwidthCol" text="Bandwidth" prefWidth="100" />
+        </columns>
+    </TableView>
+</VBox>
