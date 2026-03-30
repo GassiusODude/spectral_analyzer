@@ -38,6 +38,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import net.kcundercover.spectral_analyzer.data.IqData;
+import net.kcundercover.spectral_analyzer.rest.Capability;
 
 /**
  * Helper to set up dynamic capabilities through REST API
@@ -146,7 +147,6 @@ public class RestHelper {
 
         ObjectMapper mapper = new ObjectMapper();
 
-
         // Initialize Client and Build Request
         // HttpClient client = HttpClient.newHttpClient();
         HttpClient client = HttpClient.newBuilder()
@@ -159,7 +159,6 @@ public class RestHelper {
             // ============================================================
             final byte[][] binaryPayloadWrapper = new byte[1][];
             StringBuilder queryParams = new StringBuilder("?");
-
 
             userInputs.forEach((key, value) -> {
                 // Check if this is our special binary buffer key
@@ -181,6 +180,25 @@ public class RestHelper {
             });
 
             byte[] binaryPayload = binaryPayloadWrapper[0];
+
+            // ============================================================
+            // Limit to under 50 MB
+            // ============================================================
+            long MAX_SIZE = 50 * 1024 * 1024; // 50 MB limit
+
+            if (binaryPayload != null && binaryPayload.length > MAX_SIZE) {
+                RH_LOGGER.error("Payload too large: " + binaryPayload.length + " bytes. Capping at 50MB.");
+                // Option 1: Stop the request and inform the user
+                showError(
+                    owner,
+                    "REST Capability Size Limit",
+                    "Data max limit of 50 MB exceeded!!  Not sending request");
+                return;
+
+            } else {
+                RH_LOGGER.info("Capability applied to " +
+                    binaryPayload.length + " bytes");
+            }
 
             // ============================================================
             // Send POST request
