@@ -45,7 +45,7 @@ import net.kcundercover.spectral_analyzer.rest.Capability;
  */
 public class RestHelper {
     private static final Logger RH_LOGGER = LoggerFactory.getLogger(RestHelper.class);
-
+    public static final long MAX_SIZE = 50 * 1024 * 1024; // 50 MB limit
     /** Store of capabilities mapped by URL path */
     Map<String, Capability> capabilities = new HashMap<>();
 
@@ -182,25 +182,6 @@ public class RestHelper {
             byte[] binaryPayload = binaryPayloadWrapper[0];
 
             // ============================================================
-            // Limit to under 50 MB
-            // ============================================================
-            long MAX_SIZE = 50 * 1024 * 1024; // 50 MB limit
-
-            if (binaryPayload != null && binaryPayload.length > MAX_SIZE) {
-                RH_LOGGER.error("Payload too large: " + binaryPayload.length + " bytes. Capping at 50MB.");
-                // Option 1: Stop the request and inform the user
-                showError(
-                    owner,
-                    "REST Capability Size Limit",
-                    "Data max limit of 50 MB exceeded!!  Not sending request");
-                return;
-
-            } else {
-                RH_LOGGER.info("Capability applied to " +
-                    binaryPayload.length + " bytes");
-            }
-
-            // ============================================================
             // Send POST request
             // ============================================================
             // Construct the URL with query parameters
@@ -210,15 +191,26 @@ public class RestHelper {
                 .uri(URI.create(fullUrl))
                 .header("Content-Type", "application/octet-stream");
 
-            // Handle the Body: If we have binary data, send it raw; otherwise, send empty
+
+
             if (binaryPayload != null) {
-                RH_LOGGER.trace("Binary Payload added to request with " + binaryPayload.length + " bytes");
-                requestBuilder.POST(HttpRequest.BodyPublishers.ofByteArray(binaryPayload));
+                // Limit to under 50 MB
+                if (binaryPayload.length > MAX_SIZE) {
+                    RH_LOGGER.error("Payload too large: " + binaryPayload.length + " bytes. Capping at 50MB.");
+                    // Option 1: Stop the request and inform the user
+                    showError(
+                        owner,
+                        "REST Capability Size Limit",
+                        "Data max limit of 50 MB exceeded!!  Not sending request");
+                    return;
+                } else {
+                    RH_LOGGER.trace("Binary Payload added to request with " + binaryPayload.length + " bytes");
+                    requestBuilder.POST(HttpRequest.BodyPublishers.ofByteArray(binaryPayload));
+                }
             } else {
                 RH_LOGGER.trace("Binary Payload (no body) added to request");
                 requestBuilder.POST(HttpRequest.BodyPublishers.noBody());
             }
-
 
             HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(fullUrl))
@@ -410,7 +402,7 @@ public class RestHelper {
      * @param inputFields GUI components to take in input
      * @param iq IQ data and SigMF properties
      */
-    public void buildFormFromSchema(JsonNode schemaProperties, GridPane grid, Map<String, Control> inputFields, IqData iq) {
+    public void buildFormFromSchema(JsonNode schemaProperties, GridPane grid, Map<String, CapabilityConfig2> inputFields, IqData iq) {
         int row = 0;
 
         Map<String, Object> dataMap = iq.getData();
@@ -425,6 +417,7 @@ public class RestHelper {
             // initialize a control UI and a combo box with similiar data types
             Control inputControl;
             ComboBox<String> comboData = new ComboBox<>();
+            TextField selectTF = new TextField();
 
             // ----------------------------------------------------------------
             // Prepare the input control UI in current row
@@ -457,15 +450,9 @@ public class RestHelper {
                     min, max, defaultValue));
                 ((Spinner<?>) inputControl).setEditable(true);
             } else if ("number".equals(type)) {
-                double defaultValue = propertyDetails.path("default").asDouble(0.0);
-
-                // // Spinner for doubles: Min, Max, Default, Amount to step by
-                // inputControl = new Spinner<>(new SpinnerValueFactory.DoubleSpinnerValueFactory(
-                //     -Double.MAX_VALUE, Double.MAX_VALUE, defaultValue, 0.1));
-                // ((Spinner<?>) inputControl).setEditable(true);
-
                 TextField inputField = new TextField();
-                // Handle default value from your JSON
+
+                double defaultValue = propertyDetails.path("default").asDouble(0.0);
                 inputField.setText(String.valueOf(defaultValue));
 
                 TextFormatter<Double> formatter = new TextFormatter<>(new DoubleStringConverter(), defaultValue);
@@ -508,6 +495,8 @@ public class RestHelper {
                 if (newVal != null) {
                     Object sourceValue = dataMap.get(newVal);
                     updateControlValue(inputControl, sourceValue);
+                    updateControlValue(selectTF, newVal);
+                    // selectedText = newVal;
                 }
             });
 
@@ -521,7 +510,8 @@ public class RestHelper {
             if (!("buffer".equals(type) || propertyDetails.has("enum")) ) {
                 grid.add(comboData, 2, row);
             }
-            inputFields.put(propertyName, inputControl);
+
+            inputFields.put(propertyName, new CapabilityConfig2(inputControl, selectTF));
             row++;
         }
     }
@@ -565,14 +555,17 @@ public class RestHelper {
         ButtonType okButtonType = new ButtonType("OK", ButtonBar.ButtonData.OK_DONE);
         dialog.getDialogPane().getButtonTypes().addAll(okButtonType, ButtonType.CANCEL);
 
-        Map<String, Control> inputFields = new HashMap<>();
+        Map<String, CapabilityConfig2> inputFields = new HashMap<>();
         buildFormFromSchema(cap.getSchema(), grid, inputFields, iq);
         dialog.getDialogPane().setContent(grid);
 
         dialog.setResultConverter(dialogButton -> {
             if (dialogButton == okButtonType) {
                 Map<String, Object> results = new HashMap<>();
-                inputFields.forEach((name, control) -> {
+                inputFields.forEach((name, capConfig) -> {
+                    Control control = capConfig.control;
+                    String select = capConfig.iqDataField.getText();
+                    RH_LOGGER.info("For " + name + " selection = " + select);
                     String schemaType = cap.getSchema().path("properties").path(name).path("type").asText();
                     if (control instanceof TextField) {
                         results.put(name, ((TextField) control).getText());
@@ -595,5 +588,13 @@ public class RestHelper {
             executeCapability(owner, cap, inputs, iq);
         });
     }
+}
 
+class CapabilityConfig2 {
+    public CapabilityConfig2(Control control, TextField iqDataField) {
+        this.control = control;
+        this.iqDataField = iqDataField;
+    }
+    public Control control;
+    public TextField iqDataField;
 }
