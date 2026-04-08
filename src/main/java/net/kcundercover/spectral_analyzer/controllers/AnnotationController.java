@@ -3,15 +3,23 @@ import javafx.application.Platform;
 import javafx.event.ActionEvent;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
+import javafx.concurrent.Task;
 import javafx.fxml.FXML;
+import javafx.geometry.Pos;
+import javafx.geometry.Insets;
+import javafx.scene.control.Button;
+import javafx.scene.control.ButtonType;
 import javafx.scene.control.cell.CheckBoxTableCell;
 import javafx.scene.control.cell.TextFieldTableCell;
 import javafx.scene.control.ChoiceDialog;
 import javafx.scene.control.Control;
+import javafx.scene.control.Dialog;
+import javafx.scene.control.ProgressBar;
 import javafx.scene.control.TableView;
 import javafx.scene.control.TableCell;
 import javafx.scene.control.TableColumn;
 import javafx.scene.control.TextArea;
+import javafx.scene.layout.VBox;
 import javafx.scene.shape.Rectangle;
 import javafx.scene.text.Text;
 import javafx.stage.Modality;
@@ -31,6 +39,7 @@ import net.kcundercover.spectral_analyzer.data.AnnotationGroup;
 import net.kcundercover.spectral_analyzer.data.AnnotationRow;
 import net.kcundercover.spectral_analyzer.data.IqData;
 import net.kcundercover.spectral_analyzer.rest.Capability;
+import net.kcundercover.spectral_analyzer.rest.CapabilityConfig;
 import net.kcundercover.spectral_analyzer.data.AnnotationRow;
 // import net.kcundercover.spectral_analyzer.rest.CapabilityConfig;
 import net.kcundercover.spectral_analyzer.sigmf.SigMfAnnotation;
@@ -63,12 +72,13 @@ public class AnnotationController {
         annotationTable.setEditable(true);
         labelCol.setCellFactory(TextFieldTableCell.forTableColumn());
         labelCol.setCellValueFactory(cellData ->
-            new ReadOnlyStringWrapper(cellData.getValue().getLabel()));
+            cellData.getValue().labelProperty());
 
-        descCol.setCellValueFactory(cellData ->
-            new ReadOnlyStringWrapper(cellData.getValue().getComment()));
+        // descCol.setCellValueFactory(cellData ->
+        //     new ReadOnlyStringWrapper(cellData.getValue().getComment()));
                 // NOTE: set so edit supports multiline comment
-                descCol.setCellFactory(tc -> {
+        descCol.setCellValueFactory(cellData -> cellData.getValue().commentProperty());
+        descCol.setCellFactory(tc -> {
             return new TableCell<AnnotationRow, String>() {
                 private final Text text = new Text();
                 private final TextArea textArea = new TextArea();
@@ -255,35 +265,107 @@ public class AnnotationController {
 
     }
 
-    public void executeCapability(Capability cap) {
-        // int numSelected = getNumSelected();
-
-        // CapabilityConfig cc = new CapabilityConfig(cap);
-        AC_LOGGER.info("Execute capability " + cap.getPath());
-        for (AnnotationRow row : annotationTable.getItems()) {
-            if (row.isSelected()) {
-                AC_LOGGER.info("Excute capability (%s) for %s at %f seconds",
-                    cap.getPath(), row.getLabel(), row.getStartTime());
-
-                int down = (int) Math.floor(this.sampleRate / row.getBandwidth());
-                double targetFs = this.sampleRate / down;
-                long targetStart = (long)(row.getStartTime() * this.sampleRate);
-                long targetDur = (long)(row.getDuration() * this.sampleRate);
-                String dataType = sigmfHelper.getMetadata().global().datatype();
-                double inputFc = sigmfHelper.getMetadata().captures().get(0).frequency();
-                double center = row.getCenterFreq() - inputFc;
-                asyncDownConvertService.extractAndDownConvertAsync(
-                        sigmfHelper.getDataBuffer(), targetStart, (int) targetDur, dataType, center / this.sampleRate, down, false)
-                    .thenAccept(data -> {
-                        // downsample the burst
-                        IqData iqData = new IqData(
-                            "current", data, targetFs, sigmfHelper.getMetadata(), row.getAssociatedGroup().data);
-
-                        // TODO:
-                    });
-            }
-
+    public void executeCapability(Window owner, Capability cap) {
+        int numSelected = getNumSelected();
+        if (numSelected == 0) {
+            return;
         }
+
+        // ====================================================================
+        // Configure the capability
+        // ====================================================================
+        double sampleRate = this.sampleRate;
+        AnnotationRow firstSelected = annotationTable.getItems().stream()
+            .filter(AnnotationRow::isSelected)
+            .findFirst()
+            .orElse(null); // Returns null if nothing is selected
+
+        IqData iqDataTemplate = new IqData(
+            "template", new double[2][10], sampleRate,
+            sigmfHelper.getMetadata(),
+            firstSelected.getAssociatedGroup().data);
+        CapabilityConfig cc = new CapabilityConfig(cap, iqDataTemplate);
+        Map<String, Object> configTemplate = cc.configureCapability(owner, iqDataTemplate);
+        Dialog<Void> progressDialog = new Dialog<>();
+        progressDialog.initOwner(owner);
+
+        // ====================================================================
+        // Run capability with progress bar
+        // ====================================================================
+        Task<Void> restTask = new Task<>() {
+            @Override
+            protected Void call() throws Exception {
+                int numSelected = getNumSelected();
+                int numProcessed = 0;
+
+                for (AnnotationRow row : annotationTable.getItems()) {
+                    if (isCancelled()) {
+                        break;
+                    }
+                    if (row.isSelected()) {
+                        AC_LOGGER.info("Excute capability ({}) for {} at {} seconds",
+                            cap.getPath(), row.getLabel(), row.getStartTime());
+
+                        int down = (int) Math.floor(sampleRate / row.getBandwidth());
+                        double targetFs = sampleRate / down;
+                        long targetStart = (long)(row.getStartTime() * sampleRate);
+                        long targetDur = (long)(row.getDuration() * sampleRate);
+                        String dataType = sigmfHelper.getMetadata().global().datatype();
+                        double inputFc = sigmfHelper.getMetadata().captures().get(0).frequency();
+                        double center = row.getCenterFreq() - inputFc;
+                        asyncDownConvertService.extractAndDownConvertAsync(
+                                sigmfHelper.getDataBuffer(), targetStart, (int) targetDur, dataType, center / sampleRate, down, false)
+                            .thenAccept(data -> {
+                                // downsample the burst
+                                IqData iqData = new IqData(
+                                    "current", data, targetFs,
+                                    sigmfHelper.getMetadata(), row.getAssociatedGroup().data);
+
+                                // Update config based on current iqData
+                                cc.updateConfig(configTemplate, iqData);
+
+                                String response = restHelper.executeCapability(cap, configTemplate, iqData);
+
+                                // append response in comment
+                                row.setComment(row.getComment() + "\n" + response);
+
+
+                            }).join();
+
+
+                        numProcessed++;
+                        updateProgress(numProcessed, numSelected);
+                    }
+                }
+                progressDialog.close();
+                return null;
+            }
+        };
+
+        progressDialog.getDialogPane().getButtonTypes().add(ButtonType.CANCEL);
+        Button actualStopButton = (Button) progressDialog.getDialogPane().lookupButton(ButtonType.CANCEL);
+        actualStopButton.setText("Stop Signals");
+        actualStopButton.setOnAction(e -> restTask.cancel());
+
+        progressDialog.setTitle("Running Capability");
+        progressDialog.setHeaderText("Processing signals...");
+        ProgressBar progressBar = new ProgressBar(0);
+        progressBar.progressProperty().bind(restTask.progressProperty());
+
+
+        progressBar.setPrefWidth(300);
+
+        VBox vbox = new VBox(10, progressBar);
+        vbox.setAlignment(Pos.CENTER);
+        vbox.setPadding(new Insets(20));
+
+        progressDialog.getDialogPane().setContent(vbox);
+        // Close the dialog automatically when the task finishes
+        restTask.setOnSucceeded(e ->  Platform.runLater(progressDialog::close));
+        restTask.setOnCancelled(e ->  Platform.runLater(progressDialog::close));
+        restTask.setOnFailed(e ->  Platform.runLater(progressDialog::close));
+        new Thread(restTask).start();
+        progressDialog.showAndWait();
     }
 
     @FXML
@@ -309,7 +391,7 @@ public class AnnotationController {
                 Capability cap = restHelper.getCapability(selectedPath);
                 AC_LOGGER.info("Selected " + cap.getBaseUrl() + cap.getPath());
 
-                executeCapability(cap);
+                executeCapability(owner, cap);
             });
         });
     }

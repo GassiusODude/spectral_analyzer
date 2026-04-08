@@ -135,6 +135,164 @@ public class RestHelper {
         }
     }
 
+    public String executeCapability(Capability cap, Map<String, Object> userInputs, IqData iq){
+        if (cap == null) {
+            return "cap is null...abort!";
+        }
+
+        ObjectMapper mapper = new ObjectMapper();
+
+        HttpClient client = HttpClient.newBuilder()
+            .version(HttpClient.Version.HTTP_1_1)
+            .followRedirects(HttpClient.Redirect.NORMAL)
+            .build();
+
+        if (cap.getMethod() == HttpMethod.POST) {
+            // ============================================================
+            // Prepare POST request
+            // ============================================================
+            final byte[][] binaryPayloadWrapper = new byte[1][];
+            StringBuilder queryParams = new StringBuilder("?");
+
+            userInputs.forEach((key, value) -> {
+                // Check if this is our special binary buffer key
+                if ("Binary Request Body".equals(key)) {
+                    // Pull the actual byte[] from your data mapping using the selected key
+                    String selectedBufferKey = value.toString();
+                    binaryPayloadWrapper[0] = (byte[]) iq.getDataBuffer().get(selectedBufferKey);
+                    RH_LOGGER.info("key = " + key + "\tSelected = " + selectedBufferKey);
+
+                } else {
+                    // Everything else is a Query Parameter for the URL
+                    if (queryParams.length() > 1) {
+                        queryParams.append("&");
+                    }
+                    // NOTE: use encoding to avoid issues with spaces (" " -> "%20")
+                    String encodedValue = URLEncoder.encode(value.toString(), StandardCharsets.UTF_8);
+                    queryParams.append(key).append("=").append(encodedValue);
+                }
+            });
+
+            byte[] binaryPayload = binaryPayloadWrapper[0];
+
+            // ============================================================
+            // Send POST request
+            // ============================================================
+            // Construct the URL with query parameters
+            String fullUrl = cap.getBaseUrl() + cap.getPath() + queryParams.toString();
+
+            HttpRequest.Builder requestBuilder = HttpRequest.newBuilder()
+                .uri(URI.create(fullUrl))
+                .header("Content-Type", "application/octet-stream");
+
+            if (binaryPayload != null) {
+                // Limit to under 50 MB
+                if (binaryPayload.length > MAX_SIZE) {
+                    RH_LOGGER.error("Payload too large: " + binaryPayload.length + " bytes. Capping at 50MB.");
+                    return "REST capability exceeds maximum binary Payload of 50 MB";
+                } else {
+                    RH_LOGGER.trace("Binary Payload added to request with " + binaryPayload.length + " bytes");
+                    requestBuilder.POST(HttpRequest.BodyPublishers.ofByteArray(binaryPayload));
+                }
+            } else {
+                RH_LOGGER.trace("Binary Payload (no body) added to request");
+                requestBuilder.POST(HttpRequest.BodyPublishers.noBody());
+            }
+
+            HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(fullUrl))
+                .header("Content-Type", "application/octet-stream")
+                .POST(HttpRequest.BodyPublishers.ofByteArray(binaryPayload))
+                .build();
+            try {
+                HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+                String jsonString = response.body();
+                if (response.statusCode() >= 200 && response.statusCode() < 300) {
+                    JsonNode jsonResponse = mapper.readTree(jsonString);
+                    return jsonResponse.toPrettyString();
+                } else {
+                    return "Error: " + response.statusCode();
+                }
+            } catch (Exception e) {
+                return "Failed: " + e.getMessage();
+            }
+                // client.sendAsync(request, HttpResponse.BodyHandlers.ofString())
+                // .thenApply(response -> {
+                    // String jsonString = response.body();
+                    // int statusCode = response.statusCode();
+                    // if (statusCode >= 200 && statusCode < 300) {
+
+                    //     try {
+                    //         JsonNode jsonResponse = mapper.readTree(jsonString);
+                    //         RH_LOGGER.info("Success: Response = " + jsonResponse.toPrettyString());
+                    //         return jsonResponse.toPrettyString();
+
+                    //     } catch (JsonProcessingException jpe) {
+                    //         return "Successful POST but error processing JSON response " + jpe.toString();
+                    //     }
+                    // } else {
+                    //     return "Received status code = (" + statusCode + ") with " + response.body();
+                    // }
+
+                // })
+                // .exceptionally(ex -> {
+                //     return "Request Failed with " + ex.getMessage();
+                // });
+
+        } else if (cap.getMethod() == HttpMethod.GET) {
+            try {
+                // ============================================================
+                // Prepare Query for GET
+                // ============================================================
+                StringBuilder queryString = new StringBuilder("?");
+                userInputs.forEach((key, value) -> {
+                    if (queryString.length() > 1) {
+                        queryString.append("&");
+                    }
+                    queryString.append(URLEncoder.encode(key, StandardCharsets.UTF_8))
+                            .append("=")
+                            .append(URLEncoder.encode(String.valueOf(value), StandardCharsets.UTF_8));
+                });
+
+                // ============================================================
+                // Set up request
+                // ============================================================
+                client = HttpClient.newHttpClient();
+                HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(cap.getBaseUrl() + cap.getPath() + queryString.toString()))
+                    .header("x-api-key", cap.getApiKey()) // Pass the secret to FastAPI
+                    .header("Accept", "application/json")
+                    .GET() // Changed from .POST(...)
+                    .build();
+
+                // ============================================================
+                // Send request and get response
+                // ============================================================
+                HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+                RH_LOGGER.info("Response = {}", response);
+
+                // Check if it was successful (Status code 200-299)
+                if (response.statusCode() >= 200 && response.statusCode() < 300) {
+                    RH_LOGGER.info("✅ Success! Status Code: {}", response.statusCode());
+                    RH_LOGGER.info("Response Body: {}", response.body());
+                } else {
+                    RH_LOGGER.error("❌ Request Failed! Status Code: {}", response.statusCode());
+                    RH_LOGGER.error("Error Detail: {}", response.body());
+                }
+                String responseBody = response.body();
+                return responseBody;
+
+            } catch (IOException ioe) {
+                return "IOException = " + ioe.getMessage();
+            } catch (InterruptedException ie) {
+                return "InterruptedException = " + ie.getMessage();
+            }
+        }
+        return "Something is wrong...should have a different return before this";
+    }
+
+
+
     /**
      * Run the capabilty
      * @param cap Capability to run.
@@ -190,8 +348,6 @@ public class RestHelper {
             HttpRequest.Builder requestBuilder = HttpRequest.newBuilder()
                 .uri(URI.create(fullUrl))
                 .header("Content-Type", "application/octet-stream");
-
-
 
             if (binaryPayload != null) {
                 // Limit to under 50 MB

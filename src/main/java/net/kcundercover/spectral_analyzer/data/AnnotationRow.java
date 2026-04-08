@@ -48,8 +48,17 @@ public class AnnotationRow {
         this.associatedGroup = group;
     }
 
+    public StringProperty labelProperty() {
+        return this.label;
+    }
+    public void setLabel(String newString) {
+        this.label.setValue(newString);
+    }
     public String getLabel() {
         return label.get();
+    }
+    public StringProperty commentProperty() {
+        return this.comment;
     }
     public String getComment() {
         return comment.get();

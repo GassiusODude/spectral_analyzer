@@ -18,6 +18,7 @@ import javafx.scene.layout.GridPane;
 import javafx.stage.Window;
 import javafx.util.converter.DoubleStringConverter;
 
+import org.apache.logging.log4j.internal.annotation.SuppressFBWarnings;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -28,17 +29,24 @@ import net.kcundercover.spectral_analyzer.rest.Capability;
 public class CapabilityConfig {
     private static final Logger CC_LOGGER = LoggerFactory.getLogger(CapabilityConfig.class);
     private Capability cap;
+    private IqData iqData;
     GridPane grid;
     Map<String, CapabilityUI> inputFields;
 
-    public CapabilityConfig(Capability cap) {
+    public CapabilityConfig(Capability cap, IqData iqData) {
         this.cap = cap;
-
+        this.iqData = iqData;
         grid = new GridPane();
         grid.setHgap(10);
         grid.setVgap(10);
 
         inputFields = new HashMap<>();
+        buildFormFromSchema(iqData);
+    }
+
+    @SuppressFBWarnings
+    public Map<String, CapabilityUI> getInputFields() {
+        return inputFields;
     }
 
     /**
@@ -210,7 +218,25 @@ public class CapabilityConfig {
         }
     }
 
-    public void configureCapability(Window owner, IqData iqData) {
+    public void updateConfig(Map<String, Object> configTemplate, IqData iqData) {
+        Map<String, Object> iqMeta = iqData.getData();
+
+        for (Map.Entry<String, CapabilityUI> entry : inputFields.entrySet()) {
+            String key = entry.getKey();
+            CapabilityUI capUI = entry.getValue();
+            Control control = capUI.control;
+            String select = capUI.iqDataField.getText();
+            if (!select.equals("")) {
+                configTemplate.put(key, iqMeta.get(select));
+                CC_LOGGER.info(key + " = (" + select + ") from new iqData");
+
+            } else {
+                CC_LOGGER.info(key + " = " + configTemplate.get(key));
+            }
+
+        }
+    }
+    public Map<String, Object> configureCapability(Window owner, IqData iqData) {
         Dialog<Map<String, Object>> dialog = new Dialog<>();
         dialog.initOwner(owner);
         dialog.setTitle("Execute Capability");
@@ -244,9 +270,10 @@ public class CapabilityConfig {
             }
             return null;
         });
-        dialog.showAndWait().ifPresent(inputs -> {
-            //executeCapability(owner, cap, inputs, iq);
-        });
+        // dialog.showAndWait().ifPresent(inputs -> {
+        //     //executeCapability(owner, cap, inputs, iq);
+        // });
+        return dialog.showAndWait().orElse(null);
     }
 }
 
