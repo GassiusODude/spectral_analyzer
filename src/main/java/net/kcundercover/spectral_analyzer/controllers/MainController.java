@@ -65,11 +65,13 @@ import net.rgielen.fxweaver.core.FxmlView;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
+import org.springframework.context.ApplicationContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 
+import net.kcundercover.spectral_analyzer.data.AnnotationGroup;
 import net.kcundercover.spectral_analyzer.data.IqData;
 import net.kcundercover.spectral_analyzer.rest.Capability;
 import net.kcundercover.spectral_analyzer.rest.RestHelper;
@@ -89,6 +91,9 @@ public class MainController {
     public MainController(){
 
     }
+    @Autowired
+    private ApplicationContext applicationContext;
+
     private static final Logger MC_LOGGER = LoggerFactory.getLogger(MainController.class);
     private RestHelper restHelper = new RestHelper();
     // throttle updates
@@ -104,7 +109,6 @@ public class MainController {
     private File lastOpenedDirectory;
     private Path inputFile;
     private long totalSamples;
-
 
     /**
      * Custom style for annotation based on label
@@ -135,11 +139,15 @@ public class MainController {
     @FXML CheckMenuItem fastDownConverter;
     @FXML ColorPicker selectColorPicker;
     @FXML CheckMenuItem menuItemShowAnnotations;
+    @FXML RadioMenuItem radioGrayscale;
+    @FXML ComboBox<String> comboColorMap;
 
     // ==========================================
     // Right Panel
     // ==========================================
 
+    @FXML TextField minDbInput;
+    @FXML TextField maxDbInput;
     // FFT control and display
     @FXML private Slider nfftSlider;
     @FXML private Label lblNfftValue;
@@ -156,23 +164,6 @@ public class MainController {
     @FXML private TextField selectionNameField;
     @FXML private TextArea selectionDescField;
     @FXML private Button btnAnalyzeSelection;
-
-
-    /**
-     * AnnotationGroup is used to track the UI {@code label} and {@code rect})
-     * {@code tooltip} and the SigMFAnnotation {@code data}.
-     *
-     * {@code label} is used to show the type of annotation
-     * {@code rect} is a overlaying Rectangle to visually show time/frequency position
-     * {@code data} is the SigMF Annotation information.
-     * {@code tooltip} is the comment from the annotation shown as a tooltip for the rectangle.
-     */
-    private static class AnnotationGroup {
-        Rectangle rect;
-        Label label;
-        SigMfAnnotation data;
-        Tooltip tooltip;
-    }
 
     /** This mapping tracks the AnnotationGroup based on the rectangle overlay */
     private final Map<Rectangle, AnnotationGroup> annotationMap = new HashMap<>();
@@ -305,11 +296,6 @@ public class MainController {
             // Trigger re-processing
             updateDisplay();
         });
-
-        // // debug
-        // plotContainer.layoutBoundsProperty().addListener((obs, oldVal, newVal) -> {
-        //     System.out.println("Plot bounds: " + newVal);
-        // });
 
         frequencyRuler.prefHeightProperty().bind(spectrogramCanvas.heightProperty());
 
@@ -525,8 +511,7 @@ public class MainController {
         MC_LOGGER.info("SigMF saved: {} annotations written in chronological order.", sortedAnnotations.size());
     }
 
-    @FXML TextField minDbInput;
-    @FXML TextField maxDbInput;
+
 
     /**
      * Handle change in the decibel to color mapping.
@@ -716,6 +701,46 @@ public class MainController {
         Platform.exit();
     }
 
+    @FXML
+    public void handleTableView(ActionEvent event) {
+        Window owner = ((javafx.scene.control.MenuItem) event.getSource())
+            .getParentPopup().getOwnerWindow();
+
+        try {
+            FXMLLoader loader = new FXMLLoader(
+                getClass().getResource("annotation-table-dialog.fxml"));
+            loader.setControllerFactory(applicationContext::getBean);
+            Parent root = loader.load();
+
+            AnnotationController controller = loader.getController();
+            var global = sigMfHelper.getMetadata().global();
+            double sampleRate = global.sampleRate();
+            controller.configAnnotationController(
+                this.annotationMap, sampleRate, restHelper, sigMfHelper);
+
+            Dialog<ButtonType> dialog = new Dialog<>();
+            dialog.setTitle("Table View Annotations");
+            dialog.initOwner(owner);
+            dialog.setResizable(true);
+            dialog.getDialogPane().setContent(root);
+            dialog.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
+
+            Optional<ButtonType> result = dialog.showAndWait();
+            if (result.isPresent() && result.get() == ButtonType.OK) {
+                // ACCEPT: User selected to accept changes made in the Table View
+                controller.updateMainAnnotations();
+                updateAnnotationDisplay();
+
+            } else {
+                // REJECT: Do nothing; the edits stay in the temporary AnnotationRow objects
+
+            }
+        } catch (IOException e) {
+            MC_LOGGER.error("Failed to open Annotation Table dialog", e);
+        }
+
+    }
+
     /**
      * Handle the About menu item
      * @param event The menu item event that triggered this listener
@@ -751,8 +776,7 @@ public class MainController {
     // ============================================================================================
     //                                  Helper functions
     // ============================================================================================
-    @FXML RadioMenuItem radioGrayscale;
-    @FXML ComboBox<String> comboColorMap;
+
     /**
      * Convert the double value to color value
      *
@@ -1213,81 +1237,79 @@ public class MainController {
     // REST API Capabilities
     // ============================================================================================
     @FXML
-private void handleConnect(ActionEvent event) {
-    // 1. Get the parent window for modality
-    Window owner = ((javafx.scene.control.MenuItem) event.getSource())
-            .getParentPopup().getOwnerWindow();
+    private void handleConnect(ActionEvent event) {
+        Window owner = ((javafx.scene.control.MenuItem) event.getSource())
+                .getParentPopup().getOwnerWindow();
 
-    // 2. Create a custom Dialog
-    Dialog<Map<String, String>> dialog = new Dialog<>();
-    dialog.setTitle("Connect to Secure REST Service");
-    dialog.setHeaderText("Enter OpenAPI Schema URL and API Key");
-    dialog.initOwner(owner);
-    dialog.initModality(Modality.WINDOW_MODAL);
+        //Create a custom Dialog
+        Dialog<Map<String, String>> dialog = new Dialog<>();
+        dialog.setTitle("Connect to Secure REST Service");
+        dialog.setHeaderText("Enter OpenAPI Schema URL and API Key");
+        dialog.initOwner(owner);
+        dialog.initModality(Modality.WINDOW_MODAL);
 
-    // Add Connect and Cancel buttons
-    ButtonType connectButtonType = new ButtonType("Connect", ButtonBar.ButtonData.OK_DONE);
-    dialog.getDialogPane().getButtonTypes().addAll(connectButtonType, ButtonType.CANCEL);
+        // Add Connect and Cancel buttons
+        ButtonType connectButtonType = new ButtonType("Connect", ButtonBar.ButtonData.OK_DONE);
+        dialog.getDialogPane().getButtonTypes().addAll(connectButtonType, ButtonType.CANCEL);
 
-    // 3. Build the UI Layout
-    GridPane grid = new GridPane();
-    grid.setHgap(10);
-    grid.setVgap(10);
-    grid.setPadding(new Insets(20, 150, 10, 10));
+        // Build the UI Layout
+        GridPane grid = new GridPane();
+        grid.setHgap(10);
+        grid.setVgap(10);
+        grid.setPadding(new Insets(20, 150, 10, 10));
 
-    TextField urlField = new TextField("http://localhost:8000/openapi.json");
-    urlField.setPrefWidth(300);
+        TextField urlField = new TextField("http://localhost:8000/openapi.json");
+        urlField.setPrefWidth(300);
 
-    // Use PasswordField for the API Key to hide the secret
-    PasswordField keyField = new PasswordField();
-    keyField.setPromptText("x-api-key");
+        // Use PasswordField for the API Key to hide the secret
+        PasswordField keyField = new PasswordField();
+        keyField.setPromptText("x-api-key");
 
-    grid.add(new Label("Schema URL:"), 0, 0);
-    grid.add(urlField, 1, 0);
-    grid.add(new Label("API Key:"), 0, 1);
-    grid.add(keyField, 1, 1);
+        grid.add(new Label("Schema URL:"), 0, 0);
+        grid.add(urlField, 1, 0);
+        grid.add(new Label("API Key:"), 0, 1);
+        grid.add(keyField, 1, 1);
 
-    dialog.getDialogPane().setContent(grid);
+        dialog.getDialogPane().setContent(grid);
 
-    // 4. Convert the result when 'Connect' is clicked
-    dialog.setResultConverter(dialogButton -> {
-        if (dialogButton == connectButtonType) {
-            return Map.of(
-                "url", urlField.getText(),
-                "key", keyField.getText()
-            );
-        }
-        return null;
-    });
-
-    Optional<Map<String, String>> result = dialog.showAndWait();
-
-    result.ifPresent(data -> {
-        String url = data.get("url");
-        String apiKey = data.get("key");
-
-        try {
-            // 5. Enforce HTTPS (Security Best Practice)
-            if (!url.toLowerCase().startsWith("https://") && !url.contains("localhost")) {
-                throw new IllegalArgumentException("For security, only HTTPS connections are allowed.");
+        // Convert the result when 'Connect' is clicked
+        dialog.setResultConverter(dialogButton -> {
+            if (dialogButton == connectButtonType) {
+                return Map.of(
+                    "url", urlField.getText(),
+                    "key", keyField.getText()
+                );
             }
+            return null;
+        });
 
-            URI.create(url);
-            MC_LOGGER.info("Attempting secure connection to: " + url);
+        Optional<Map<String, String>> result = dialog.showAndWait();
 
-            // 6. Pass BOTH the URL and the Key to your helper
-            // You will need to update restHelper.discover() to accept the second parameter
-            restHelper.discover(url, apiKey);
+        result.ifPresent(data -> {
+            String url = data.get("url");
+            String apiKey = data.get("key");
 
-        } catch (IllegalArgumentException iae) {
-            showErrorAlert(owner, "Connection Denied", iae.getMessage());
-        } catch (Exception ex) {
-            showErrorAlert(owner, "Connection Error", ex.toString());
-        }
-    });
-}
+            try {
+                // Enforce HTTPS (Security Best Practice)
+                if (!url.toLowerCase().startsWith("https://") && !url.contains("localhost")) {
+                    throw new IllegalArgumentException(
+                        "For security, only HTTPS connections are allowed.");
+                }
 
+                URI.create(url);
+                MC_LOGGER.info("Attempting secure connection to: " + url);
 
+                // Pass BOTH the URL and the Key to REST helper
+                // You will need to update restHelper.discover() to accept the second parameter
+                restHelper.discover(url, apiKey);
+
+            } catch (IllegalArgumentException iae) {
+                showErrorAlert(owner, "Connection Denied", iae.getMessage());
+            } catch (Exception ex) {
+                showErrorAlert(owner, "Connection Error", ex.toString());
+            }
+        });
+    }
 
     /**
      * Show dialog box for user to select the capability from a choice
@@ -1341,8 +1363,6 @@ private void handleConnect(ActionEvent event) {
 
             // NOTE: return to UI thread
             Platform.runLater(() -> {
-
-
                 ChoiceDialog<String> dialog = new ChoiceDialog<>();
                 dialog.setTitle("Select Capability");
 

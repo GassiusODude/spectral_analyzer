@@ -35,7 +35,12 @@
               <MenuItem text="Exit" onAction="#handleExit" />
             </items>
           </Menu>
-           <Menu text="Capabilities">
+          <Menu text="View">
+            <items>
+               <MenuItem text="Table View" onAction="#handleTableView" />
+            </items>
+          </Menu>
+          <Menu text="Capabilities">
             <items>
               <MenuItem text="Connect to REST Server..." onAction="#handleConnect" />
               <MenuItem text="Run Capability" onAction="#showChooseCapability" />
