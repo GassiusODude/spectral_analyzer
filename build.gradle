@@ -10,8 +10,8 @@ plugins {
 }
 
 group = 'net.kcundercover'
-version = '0.3.0'
-description = 'Demo project for Spring Boot'
+version = '0.4.0'
+description = 'Spectral Analysis implementation in JavaFX'
 
 java {
 	toolchain {
@@ -32,8 +32,9 @@ bootJar {
     def os = System.getProperty("os.name").toLowerCase()
     def platform = os.contains("win") ? "win" : os.contains("linux") ? "linux" : "mac"
 
+    // label archive based on operating system
     archiveClassifier = "boot-${platform}" // Result: -boot-win or -boot-linux
-    // archiveClassifier = 'boot' // Distinguishes it from the plain jar
+
     manifest {
         attributes(
             "Implementation-Title": "Spectral Analyzer",
