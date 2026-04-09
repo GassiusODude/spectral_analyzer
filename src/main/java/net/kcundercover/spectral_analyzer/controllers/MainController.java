@@ -110,7 +110,6 @@ public class MainController {
     private Path inputFile;
     private long totalSamples;
 
-
     /**
      * Custom style for annotation based on label
      */
@@ -140,11 +139,15 @@ public class MainController {
     @FXML CheckMenuItem fastDownConverter;
     @FXML ColorPicker selectColorPicker;
     @FXML CheckMenuItem menuItemShowAnnotations;
+    @FXML RadioMenuItem radioGrayscale;
+    @FXML ComboBox<String> comboColorMap;
 
     // ==========================================
     // Right Panel
     // ==========================================
 
+    @FXML TextField minDbInput;
+    @FXML TextField maxDbInput;
     // FFT control and display
     @FXML private Slider nfftSlider;
     @FXML private Label lblNfftValue;
@@ -161,8 +164,6 @@ public class MainController {
     @FXML private TextField selectionNameField;
     @FXML private TextArea selectionDescField;
     @FXML private Button btnAnalyzeSelection;
-
-
 
     /** This mapping tracks the AnnotationGroup based on the rectangle overlay */
     private final Map<Rectangle, AnnotationGroup> annotationMap = new HashMap<>();
@@ -295,11 +296,6 @@ public class MainController {
             // Trigger re-processing
             updateDisplay();
         });
-
-        // // debug
-        // plotContainer.layoutBoundsProperty().addListener((obs, oldVal, newVal) -> {
-        //     System.out.println("Plot bounds: " + newVal);
-        // });
 
         frequencyRuler.prefHeightProperty().bind(spectrogramCanvas.heightProperty());
 
@@ -515,8 +511,7 @@ public class MainController {
         MC_LOGGER.info("SigMF saved: {} annotations written in chronological order.", sortedAnnotations.size());
     }
 
-    @FXML TextField minDbInput;
-    @FXML TextField maxDbInput;
+
 
     /**
      * Handle change in the decibel to color mapping.
@@ -781,8 +776,7 @@ public class MainController {
     // ============================================================================================
     //                                  Helper functions
     // ============================================================================================
-    @FXML RadioMenuItem radioGrayscale;
-    @FXML ComboBox<String> comboColorMap;
+
     /**
      * Convert the double value to color value
      *
@@ -1369,8 +1363,6 @@ public class MainController {
 
             // NOTE: return to UI thread
             Platform.runLater(() -> {
-
-
                 ChoiceDialog<String> dialog = new ChoiceDialog<>();
                 dialog.setTitle("Select Capability");
 

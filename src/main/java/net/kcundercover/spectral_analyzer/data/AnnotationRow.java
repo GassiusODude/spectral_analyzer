@@ -7,8 +7,6 @@ import javafx.beans.property.SimpleBooleanProperty;
 import javafx.beans.property.SimpleStringProperty;
 import javafx.beans.property.SimpleDoubleProperty;
 import org.apache.logging.log4j.internal.annotation.SuppressFBWarnings;
-// import javafx.beans.property.ReadOnlyBooleanProperty;
-// import javafx.beans.property.ReadOnlyBooleanWrapper;
 
 /**
  * Annotation Row to be use in displaying Table of annotations
@@ -20,7 +18,6 @@ public class AnnotationRow {
     private final DoubleProperty duration;  // derived from sample_count / sample_rate
     private final DoubleProperty centerFreq;
     private final DoubleProperty bandwidth;
-    // private final ReadOnlyBooleanWrapper selected = new ReadOnlyBooleanWrapper(false);
     private final BooleanProperty selected = new SimpleBooleanProperty(false);
     private final AnnotationGroup associatedGroup;
 
@@ -48,6 +45,7 @@ public class AnnotationRow {
         this.associatedGroup = group;
     }
 
+    @SuppressFBWarnings
     public StringProperty labelProperty() {
         return this.label;
     }
@@ -57,6 +55,7 @@ public class AnnotationRow {
     public String getLabel() {
         return label.get();
     }
+    @SuppressFBWarnings
     public StringProperty commentProperty() {
         return this.comment;
     }
@@ -84,9 +83,6 @@ public class AnnotationRow {
         // return selected.getReadOnlyProperty();
         return selected;
     }
-    // public ReadOnlyBooleanProperty selectedProperty() {
-    //     return selected.getReadOnlyProperty();
-    // }
 
     public void setSelected(boolean selected) {
         this.selected.set(selected);

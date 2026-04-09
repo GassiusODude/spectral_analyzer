@@ -30,7 +30,7 @@ import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import javafx.beans.property.ReadOnlyObjectWrapper;
-import javafx.beans.property.ReadOnlyStringWrapper;
+// import javafx.beans.property.ReadOnlyStringWrapper;
 import org.springframework.beans.factory.annotation.Autowired;
 
 import org.springframework.stereotype.Component;
@@ -41,13 +41,19 @@ import net.kcundercover.spectral_analyzer.data.IqData;
 import net.kcundercover.spectral_analyzer.rest.Capability;
 import net.kcundercover.spectral_analyzer.rest.CapabilityConfig;
 import net.kcundercover.spectral_analyzer.data.AnnotationRow;
-// import net.kcundercover.spectral_analyzer.rest.CapabilityConfig;
+
 import net.kcundercover.spectral_analyzer.sigmf.SigMfAnnotation;
 import net.kcundercover.spectral_analyzer.sigmf.SigMfHelper;
 import net.kcundercover.spectral_analyzer.sigmf.SigMfHelper;
 import net.kcundercover.spectral_analyzer.services.AsyncExtractDownConvertService;
 import net.kcundercover.spectral_analyzer.rest.RestHelper;
 
+/**
+ * Annotation Controller
+ *
+ * This configures the dialog for viewing annotations in a TableView.
+ * It supports calling the REST capabilities on batches of annotations.
+ */
 @Component
 public class AnnotationController {
     private static final Logger AC_LOGGER = LoggerFactory.getLogger(AnnotationController.class);
@@ -74,9 +80,8 @@ public class AnnotationController {
         labelCol.setCellValueFactory(cellData ->
             cellData.getValue().labelProperty());
 
-        // descCol.setCellValueFactory(cellData ->
-        //     new ReadOnlyStringWrapper(cellData.getValue().getComment()));
-                // NOTE: set so edit supports multiline comment
+
+        // NOTE: set so edit supports multiline comment
         descCol.setCellValueFactory(cellData -> cellData.getValue().commentProperty());
         descCol.setCellFactory(tc -> {
             return new TableCell<AnnotationRow, String>() {
@@ -227,6 +232,11 @@ public class AnnotationController {
         }
     }
 
+    /**
+     * Convenience function to get the number of rows selected
+     *
+     * @return Number of selections
+     */
     public int getNumSelected() {
         int numSelected = 0;
         for (AnnotationRow row : annotationTable.getItems()) {
@@ -237,6 +247,10 @@ public class AnnotationController {
         }
         return numSelected;
     }
+
+    /**
+     * Handler for "Select All" MenuItem
+     */
     @FXML
     private void handleSelectAll() {
         int numRows = 0;
@@ -252,6 +266,9 @@ public class AnnotationController {
         }
     }
 
+    /**
+     * Handler for "Deselect All" MenuItem
+     */
     @FXML
     private void handleDeselectAll() {
         for (AnnotationRow row : annotationTable.getItems()) {
@@ -260,11 +277,14 @@ public class AnnotationController {
         this.noneSelected = true;
     }
 
-    @FXML
-    public void handleConnect(ActionEvent event) {
-
-    }
-
+    /**
+     * Execute Capability in a batch
+     *
+     * Applies the capability to the selected annotations/rows
+     *
+     * @param owner Owner Dialog (used to center the new dialog)
+     * @param cap Capability to execute
+     */
     public void executeCapability(Window owner, Capability cap) {
         int numSelected = getNumSelected();
         if (numSelected == 0) {
@@ -328,42 +348,57 @@ public class AnnotationController {
 
                                 // append response in comment
                                 row.setComment(row.getComment() + "\n" + response);
-
-
                             }).join();
 
-
+                        // Update progress bar
                         numProcessed++;
                         updateProgress(numProcessed, numSelected);
+                        if (numProcessed >= numSelected) {
+                            break;
+                        }
                     }
                 }
-                progressDialog.close();
+
                 return null;
             }
         };
 
         progressDialog.getDialogPane().getButtonTypes().add(ButtonType.CANCEL);
         Button actualStopButton = (Button) progressDialog.getDialogPane().lookupButton(ButtonType.CANCEL);
-        actualStopButton.setText("Stop Signals");
-        actualStopButton.setOnAction(e -> restTask.cancel());
+        actualStopButton.setText("Stop Batch");
+        actualStopButton.addEventHandler(ActionEvent.ACTION, e -> {
+            if (restTask.isRunning()) {
+                restTask.cancel();
+            }
+        });
 
         progressDialog.setTitle("Running Capability");
         progressDialog.setHeaderText("Processing signals...");
         ProgressBar progressBar = new ProgressBar(0);
         progressBar.progressProperty().bind(restTask.progressProperty());
-
-
         progressBar.setPrefWidth(300);
 
         VBox vbox = new VBox(10, progressBar);
         vbox.setAlignment(Pos.CENTER);
         vbox.setPadding(new Insets(20));
-
         progressDialog.getDialogPane().setContent(vbox);
+
         // Close the dialog automatically when the task finishes
-        restTask.setOnSucceeded(e ->  Platform.runLater(progressDialog::close));
+        restTask.setOnSucceeded(e -> {
+            Platform.runLater(() -> {
+                actualStopButton.setText("Close");
+                progressDialog.setHeaderText("All tasks completed");
+            });
+        });
         restTask.setOnCancelled(e ->  Platform.runLater(progressDialog::close));
-        restTask.setOnFailed(e ->  Platform.runLater(progressDialog::close));
+        restTask.setOnFailed(e -> {
+            Platform.runLater(() -> {
+                actualStopButton.setText("Close");
+                progressDialog.setHeaderText("An error occurred during processing.");
+                progressDialog.close();
+            });
+        });
+
         new Thread(restTask).start();
         progressDialog.showAndWait();
     }
@@ -395,6 +430,4 @@ public class AnnotationController {
             });
         });
     }
-
-
 }
