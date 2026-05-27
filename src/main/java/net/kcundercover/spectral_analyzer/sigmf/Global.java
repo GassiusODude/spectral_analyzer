@@ -48,7 +48,7 @@ public record Global(
 
     /** Supported data types */
     private static final Set<String> SUPPORTED_TYPES = Set.of(
-        "cf32_le", "cf32_be", "ci16_le", "ci16_be");
+        "cf32_le", "cf32_be", "ci16_le", "ci16_be", "cu8");
 
     /**
      * Getter for extensions fields
@@ -68,6 +68,9 @@ public record Global(
             return 8; // 4 bytes I + 4 bytes Q
         } else if (datatype.startsWith("ci16")) {
             return 4; // 2 bytes I + 2 bytes Q
+        } else if (datatype.startsWith("cu8")) {
+            // unsigned 8 bits
+            return 2;
         }
         return 8; // Fallback
     }

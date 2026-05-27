@@ -49,7 +49,7 @@ public class SigMfHelper {
 
         // Memory Map the Data File
         try (RandomAccessFile raf = new RandomAccessFile(dataFile, "r");
-             FileChannel channel = raf.getChannel()) {
+            FileChannel channel = raf.getChannel()) {
             // NOTE: was crashing on large data files with over 2 GB
             //       This snippet limits to the max integer size
             long safeSize = Math.min(channel.size(), (long) Integer.MAX_VALUE);
