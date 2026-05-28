@@ -21,6 +21,7 @@ public record Global(
     @JsonProperty("core:datatype") String datatype,
     @JsonProperty("core:sample_rate") Double sampleRate,
     @JsonProperty("core:version") String version,
+    @JsonProperty("core:dataset") String dataset,
 
     // The "Catch-all" for everything else
     @JsonAnySetter
@@ -48,7 +49,7 @@ public record Global(
 
     /** Supported data types */
     private static final Set<String> SUPPORTED_TYPES = Set.of(
-        "cf32_le", "cf32_be", "ci16_le", "ci16_be");
+        "cf32_le", "cf32_be", "ci16_le", "ci16_be", "ci8", "cu8", "cf64_le", "cf64_be");
 
     /**
      * Getter for extensions fields
@@ -68,6 +69,11 @@ public record Global(
             return 8; // 4 bytes I + 4 bytes Q
         } else if (datatype.startsWith("ci16")) {
             return 4; // 2 bytes I + 2 bytes Q
+        } else if (datatype.startsWith("cu8") || datatype.startsWith("ci8")) {
+            // unsigned 8 bits
+            return 2;
+        } else if (datatype.startsWith("cf64")) {
+            return 16; // 8 bytes I + 8 bytes Q
         }
         return 8; // Fallback
     }

@@ -33,6 +33,8 @@ public class SpectralService {
     public double[] computeMagnitudes(MappedByteBuffer buffer, int startByte, int nfft, String datatype) {
         Complex[] complexData = new Complex[nfft];
         boolean isCi16 = datatype.startsWith("ci16");
+        boolean isCf32 = datatype.startsWith("cf32");
+        boolean isCu8 = datatype.startsWith("cu8");
 
         for (int i = 0; i < nfft; i++) {
             double real, imag;
@@ -40,10 +42,18 @@ public class SpectralService {
                 // Read 2-byte shorts for ci16 (Total 4 bytes per IQ pair)
                 real = buffer.getShort(startByte + (i * 4)) / 32768.0;
                 imag = buffer.getShort(startByte + (i * 4) + 2) / 32768.0;
-            } else {
+            } else if (isCf32) {
                 // Read 4-byte floats for cf32 (Total 8 bytes per IQ pair)
                 real = buffer.getFloat(startByte + (i * 8));
                 imag = buffer.getFloat(startByte + (i * 8) + 4);
+            } else if (isCu8) {
+                real = buffer.get(startByte + (i * 2)) & 0xFF;
+                imag = buffer.get(startByte + (i * 2) + 1) & 0xFF;
+                real = (real - 127.5) / 128;
+                imag = (imag - 127.5) / 128;
+            } else {
+                real = 0.0;
+                imag = 0.0;
             }
             complexData[i] = new Complex(real, imag);
         }

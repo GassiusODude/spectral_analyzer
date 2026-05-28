@@ -21,7 +21,7 @@ import javafx.scene.control.PasswordField;
 import javafx.scene.control.Slider;
 import javafx.scene.control.TextArea;
 import javafx.scene.control.TextField;
-// import javafx.scene.control.TextInputDialog;
+import javafx.scene.control.TextInputDialog;
 import javafx.scene.control.Tooltip;
 import javafx.scene.canvas.Canvas;
 import javafx.scene.canvas.GraphicsContext;
@@ -50,17 +50,21 @@ import javafx.stage.FileChooser;
 import javafx.stage.Modality;
 import javafx.stage.Stage;
 import javafx.stage.Window;
+
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
+
 import java.net.URI;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
+
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+
 import net.rgielen.fxweaver.core.FxmlView;
 
 import org.springframework.beans.factory.annotation.Autowired;
@@ -69,17 +73,23 @@ import org.springframework.context.ApplicationContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
 
+import net.kcundercover.spectral_analyzer.controllers.RawSignalImportController;
 import net.kcundercover.spectral_analyzer.data.AnnotationGroup;
 import net.kcundercover.spectral_analyzer.data.IqData;
+import net.kcundercover.spectral_analyzer.data.RawSignalImportSettings;
 import net.kcundercover.spectral_analyzer.rest.Capability;
 import net.kcundercover.spectral_analyzer.rest.RestHelper;
 import net.kcundercover.spectral_analyzer.sigmf.SigMfHelper;
+import net.kcundercover.spectral_analyzer.sigmf.NonconformingDatasetHelper;
 import net.kcundercover.spectral_analyzer.sigmf.SigMfAnnotation;
 import net.kcundercover.spectral_analyzer.services.AsyncExtractDownConvertService;
 import net.kcundercover.spectral_analyzer.services.ExtractDownConvertService;
 import net.kcundercover.spectral_analyzer.services.SpectralService;
+
+
 
 /**
  * Main controller for FXML
@@ -406,6 +416,54 @@ public class MainController {
     // ============================================================================================
 
     /**
+     * Launch the dialog to import a raw signal file and get the user input settings for that file
+     * @param owner The window that will own the dialog
+     * @param selectedFile The file to import
+     * @return An Optional containing the import settings if the user confirms, or empty if they cancel
+     */
+    public Optional<RawSignalImportSettings> importRawFile(Window owner, File selectedFile) {
+        try {
+            FXMLLoader loader = new FXMLLoader(getClass().getResource("RawSignalImportDialog.fxml"));
+            GridPane dialogContent = loader.load();
+            RawSignalImportController controller = loader.getController();
+
+            // Push file dependencies into the controller
+            controller.populateDefaults(selectedFile);
+
+            // Wrap FXML content in a JavaFX Dialog box
+            Dialog<RawSignalImportSettings> dialog = new Dialog<>();
+            dialog.initOwner(owner);
+            dialog.setTitle("Import Raw Signal Data");
+            dialog.setHeaderText("Configure parameters for:\n" + selectedFile.getName());
+            dialog.getDialogPane().setContent(dialogContent);
+
+            ButtonType importButtonType = new ButtonType("Import", ButtonBar.ButtonData.OK_DONE);
+            dialog.getDialogPane().getButtonTypes().addAll(importButtonType, ButtonType.CANCEL);
+
+            // Handle Input Validation Bindings
+            Button importButton = (Button) dialog.getDialogPane().lookupButton(importButtonType);
+            Runnable validateHook = () -> importButton.setDisable(!controller.isInputValid());
+
+            controller.sampleRateTextProperty().addListener((o, oldV, newV) -> validateHook.run());
+            controller.centerFreqTextProperty().addListener((o, oldV, newV) -> validateHook.run());
+
+            // Convert Dialog result using our controller logic
+            dialog.setResultConverter(button -> (button == importButtonType) ? controller.getSettings() : null);
+
+            Optional<RawSignalImportSettings> result = dialog.showAndWait();
+            result.ifPresent(settings -> {
+                // Execute backend NCD generation logic here
+                MC_LOGGER.info("Processing file with sample rate: " + settings.sampleRate());
+            });
+            return result;
+
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        return Optional.empty();
+    }
+
+    /**
      * Open an input SigMF file
      * @param event The event that triggered this handler
      */
@@ -421,6 +479,9 @@ public class MainController {
         // Set extension filters (useful for SDR/Audio files)
         fileChooser.getExtensionFilters().addAll(
             new FileChooser.ExtensionFilter("SigMF (*.sigmf-meta)", "*.sigmf-meta"),
+            new FileChooser.ExtensionFilter("Raw Signal Files (*.cs16, *.ci16, *.cu8, *.ci8, *.cf32, *.cf64)",
+        "*.cs16", "*.ci16", "*.cu8", "*.ci8", "*.cf32", "*.cf64", "*.iq", "*.raw"),
+            new FileChooser.ExtensionFilter("Wave Audio (*.wav)", "*.wav"),
             new FileChooser.ExtensionFilter("All Files", "*.*")
         );
 
@@ -437,6 +498,86 @@ public class MainController {
             MC_LOGGER.info("Selected file: {}", selectedFile.getAbsolutePath());
 
             // Add logic here to pass the file to your JDSP processing service
+            String selectedName = selectedFile.getName().toLowerCase();
+            // =======================================================
+            // If non-sigmf-meta, generate Non-Conforming Dataset Meta file
+            // =======================================================
+            if (selectedName.endsWith(".wav")) {
+                long centerFrequency = 0L;
+                try {
+                    TextInputDialog freqDialog = new TextInputDialog("");
+                    freqDialog.initOwner(ownerWindow);
+                    freqDialog.setTitle("SigMF Metadata Input");
+                    freqDialog.setHeaderText("WAV File Parsed Successfully");
+                    freqDialog.setContentText("Enter the recording's Center Frequency (in Hz):");
+                    java.util.Optional<String> result = freqDialog.showAndWait();
+                    if (result.isPresent() && !result.get().strip().isEmpty()) {
+                        String input = result.get().strip();
+                        try {
+                            // Fix: Parse as double first to support scientific notation like "2.4e9"
+                            centerFrequency = (long) Long.parseLong(input);
+                        } catch (NumberFormatException e) {
+                            showErrorAlert(ownerWindow, "Invalid Format", "Please enter a valid numeric value.");
+                            return;
+                        }
+                    } else {
+                        MC_LOGGER.info("User canceled the input prompt.");
+                        return;
+                    }
+
+                    NonconformingDatasetHelper helper = NonconformingDatasetHelper.fromWavFile(selectedFile, centerFrequency);
+                    Path newMetaFilePath = Path.of(helper.getMetaFilePath()); // to trigger the meta file creation
+                    if (Files.exists(newMetaFilePath)) {
+                        MC_LOGGER.warn("Meta file ({}) already exists...aborting", newMetaFilePath);
+                        return;
+                    }
+                    helper.writeSigMfFile();
+                    MC_LOGGER.info("Extracted settings from WAV file");
+
+                    // update file to the new sigMF
+                    selectedFile = new File(helper.getMetaFilePath());
+
+                } catch (IllegalArgumentException e) {
+                    showErrorAlert(ownerWindow, "Failed to process WAV file", e.getMessage());
+                    return;
+                } catch (IOException e) {
+                    showErrorAlert(ownerWindow, "Failed to read WAV file", e.getMessage());
+                    return;
+                } catch (Exception e) {
+                    showErrorAlert(ownerWindow, "Unexpected error processing WAV file", e.getMessage());
+                    return;
+                }
+
+
+            } else if (!selectedName.endsWith(".sigmf-meta")) {
+                // Launch dialog to prompt user for info
+                Optional<RawSignalImportSettings> settings =
+                    importRawFile(ownerWindow, selectedFile);
+                if (settings.isPresent()) {
+                    NonconformingDatasetHelper helper = new NonconformingDatasetHelper(
+                        selectedFile,
+                        settings.get().sampleRate(),
+                        settings.get().centerFrequency(),
+                        settings.get().datatype());
+                    Path newMetaFilePath = Path.of(helper.getMetaFilePath()); // to trigger the meta file creation
+                    if (Files.exists(newMetaFilePath)) {
+                        MC_LOGGER.warn("Meta file already exists...aborting");
+                        return;
+                    }
+                    try {
+                        helper.writeSigMfFile();
+                    } catch (IllegalStateException e) {
+                        showErrorAlert(ownerWindow, "Failed to write Non-conforming dataset SigMF meta file", e.getMessage());
+                        return;
+                    }
+                    // update selected file to point to new sigmf meta file
+                    selectedFile = new File(newMetaFilePath.toString());
+                }
+            }
+
+            // =======================================================
+            // Load SigMF Meta file
+            // =======================================================
             try {
                 sigMfHelper.load(selectedFile.toPath());
 
@@ -493,6 +634,7 @@ public class MainController {
                 e.printStackTrace();
                 showErrorAlert(ownerWindow, "Failed to load SigMF file", e.getMessage());
             }
+
         }
     }
 
@@ -511,11 +653,9 @@ public class MainController {
         MC_LOGGER.info("SigMF saved: {} annotations written in chronological order.", sortedAnnotations.size());
     }
 
-
-
     /**
      * Handle change in the decibel to color mapping.
-     * @param event
+     * @param event The event that triggered this handler
      */
     @FXML
     private void handleScaleUpdate(ActionEvent event) {
@@ -944,7 +1084,6 @@ public class MainController {
         if (!menuItemShowAnnotations.isSelected()) {
             // keep hidden
             rect.setVisible(false);
-
         }
     }
 
@@ -952,7 +1091,7 @@ public class MainController {
      * Prepares a {@code Label} and a {@code Rectangle} to represent the
      * provided annotation
      * @param data Current Annotation
-     * @return
+     * @return The created rectangle
      */
     private Rectangle createRectangleForData(SigMfAnnotation cAnnot) {
         Rectangle rect = new Rectangle(); // Position will be set by updateDisplay()
@@ -1112,7 +1251,7 @@ public class MainController {
         }
     }
 
-     /**
+    /**
      * This is your main rendering loop.
      * It connects the math (SpectralService) to the UI (Canvas).
      *
@@ -1190,8 +1329,12 @@ public class MainController {
         }
     }
 
-
-    // Quick helper to show errors to the user
+    /**
+     * Show an error alert dialog to the user
+     * @param owner The window that will own the alert
+     * @param header The header text for the alert
+     * @param content The content text for the alert
+     */
     private void showErrorAlert(Window owner, String header, String content) {
         Alert alert = new Alert(AlertType.ERROR);
         alert.initOwner(owner);

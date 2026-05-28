@@ -56,7 +56,15 @@ public class ExtractDownConvertService {
             int count, String datatype, double freqOff, int down,
             boolean fast) {
         EDCS_LOGGER.info("Extracting {} samples, Down-converting by factor: {}", count, down);
-        int bytesPerIQ = datatype.startsWith("ci16") ? 4 : 8;
+
+        int bytesPerIQ;
+        if (datatype.startsWith("ci16")) {
+            bytesPerIQ = 4;
+        } else if (datatype.startsWith("cu8") || datatype.startsWith("ci8")) {
+            bytesPerIQ = 2;
+        } else {
+            bytesPerIQ = 8;
+        }
         long startByte = startSample * bytesPerIQ;
 
         // -----------------------  load time signal  -------------------------
@@ -75,7 +83,16 @@ public class ExtractDownConvertService {
             } else if (datatype.startsWith("ci16")) {
                 real = buffer.getShort((int) byteOffset) / 32768.0;
                 imag = buffer.getShort((int) byteOffset + 2) / 32768.0;
-
+            } else if (datatype.startsWith("cu8")) {
+                real = buffer.get((int) byteOffset ) & 0xFF;
+                imag = buffer.get((int) (byteOffset + 1)) & 0xFF;
+                real = (real - 127.5) / 128;
+                imag = (imag - 127.5) / 128;
+            } else if (datatype.startsWith("ci8")) {
+                real = buffer.get((int) byteOffset ) & 0xFF;
+                imag = buffer.get((int) (byteOffset + 1)) & 0xFF;
+                real = real / 128;
+                imag = imag / 128;
             } else {
                 real = buffer.getFloat((int) byteOffset);
                 imag = buffer.getFloat((int) byteOffset + 4);

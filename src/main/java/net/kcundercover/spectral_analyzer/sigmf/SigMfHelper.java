@@ -33,6 +33,7 @@ public class SigMfHelper {
     public SigMfHelper() {
 
     }
+
     /**
      * Loads a SigMF meta file
      *
@@ -43,21 +44,44 @@ public class SigMfHelper {
         // Load Metadata
         this.metadata = mapper.readValue(metaPath.toFile(), SigMfMetadata.class);
 
-        // Identify Data File (standard requires same base name with .sigmf-data)
-        String dataFileName = metaPath.toString().replace(".sigmf-meta", ".sigmf-data");
-        File dataFile = new File(dataFileName);
+        Path dataPath, parentPath;
+        parentPath = metaPath.getParent();
+        if (this.metadata.global() != null && this.metadata.global().dataset() != null && parentPath != null) {
+            // support non-conforming datasets where the metafile specifies the data
+            // file location in the global section
+            dataPath = metaPath.getParent().resolve(this.metadata.global().dataset());
+        } else {
+            // Default to same base name with .sigmf-data extension
+            String dataFileName = metaPath.toString().replace(".sigmf-meta", ".sigmf-data");
+            dataPath = Path.of(dataFileName);
+        }
+
+        // Determine if there are header bytes to skip (usually in the first capture segment)
+        long headerBytes = 0;
+        if (this.metadata.captures() != null && !this.metadata.captures().isEmpty()) {
+            var firstCapture = this.metadata.captures().get(0);
+            // Assumes your capture record/POJO exposes headerBytes() or getHeaderBytes()
+            if (firstCapture.headerBytes() != null) {
+                headerBytes = firstCapture.headerBytes();
+            }
+        }
 
         // Memory Map the Data File
-        try (RandomAccessFile raf = new RandomAccessFile(dataFile, "r");
-             FileChannel channel = raf.getChannel()) {
-            // NOTE: was crashing on large data files with over 2 GB
-            //       This snippet limits to the max integer size
-            long safeSize = Math.min(channel.size(), (long) Integer.MAX_VALUE);
-            if (safeSize != channel.size()) {
-                SMH_LOGGER.info("Data file is large, limiting buffer to first 2 GB");
+        try (RandomAccessFile raf = new RandomAccessFile(dataPath.toFile(), "r");
+            FileChannel channel = raf.getChannel()) {
+
+            long channelSize = channel.size();
+
+            // Calculate the maximum available data bytes remaining after skipping the header
+            long availableDataBytes = Math.max(0, channelSize - headerBytes);
+
+            // Limit mapping buffer to the maximum 2 GB integer boundary capacity
+            long safeSize = Math.min(availableDataBytes, (long) Integer.MAX_VALUE);
+            if (safeSize != availableDataBytes) {
+                SMH_LOGGER.info("Data file payload is large, limiting buffer to first 2 GB of signal samples");
             }
-            this.dataBuffer = channel.map(FileChannel.MapMode.READ_ONLY, 0, safeSize);
-            // this.dataBuffer = channel.map(FileChannel.MapMode.READ_ONLY, 0, channel.size());
+
+            this.dataBuffer = channel.map(FileChannel.MapMode.READ_ONLY, headerBytes, safeSize);
 
             // Set Endianness based on SigMF datatype (e.g., cf32_le)
             if (this.metadata.global().datatype().endsWith("_le")) {
@@ -136,6 +160,7 @@ public class SigMfHelper {
 
             mapper.writeValue(getCurrentMetaFile(), this.metadata);
             SMH_LOGGER.info("SigMF metadata saved successfully.");
+
         } catch (IOException e) {
             SMH_LOGGER.error("Failed to save SigMF file", e);
         }
