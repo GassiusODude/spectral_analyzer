@@ -70,7 +70,7 @@ public class IqData {
         Global newGlobal = new Global(
             "cf64_le",
             newFs,
-            origMeta.global().version(),
+            origMeta.global().version(), null,
             Map.of());
 
         this.meta = new SigMfMetadata(

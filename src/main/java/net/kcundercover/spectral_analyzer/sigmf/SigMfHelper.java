@@ -33,6 +33,7 @@ public class SigMfHelper {
     public SigMfHelper() {
 
     }
+
     /**
      * Loads a SigMF meta file
      *
@@ -43,12 +44,20 @@ public class SigMfHelper {
         // Load Metadata
         this.metadata = mapper.readValue(metaPath.toFile(), SigMfMetadata.class);
 
-        // Identify Data File (standard requires same base name with .sigmf-data)
-        String dataFileName = metaPath.toString().replace(".sigmf-meta", ".sigmf-data");
-        File dataFile = new File(dataFileName);
+        Path dataPath, parentPath;
+        parentPath = metaPath.getParent();
+        if (this.metadata.global() != null && this.metadata.global().dataset() != null && parentPath != null) {
+            // support non-conforming datasets where the metafile specifies the data
+            // file location in the global section
+            dataPath = metaPath.getParent().resolve(this.metadata.global().dataset());
+        } else {
+            // Default to same base name with .sigmf-data extension
+            String dataFileName = metaPath.toString().replace(".sigmf-meta", ".sigmf-data");
+            dataPath = Path.of(dataFileName);
+        }
 
         // Memory Map the Data File
-        try (RandomAccessFile raf = new RandomAccessFile(dataFile, "r");
+        try (RandomAccessFile raf = new RandomAccessFile(dataPath.toFile(), "r");
             FileChannel channel = raf.getChannel()) {
             // NOTE: was crashing on large data files with over 2 GB
             //       This snippet limits to the max integer size
@@ -136,6 +145,7 @@ public class SigMfHelper {
 
             mapper.writeValue(getCurrentMetaFile(), this.metadata);
             SMH_LOGGER.info("SigMF metadata saved successfully.");
+
         } catch (IOException e) {
             SMH_LOGGER.error("Failed to save SigMF file", e);
         }
