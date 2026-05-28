@@ -8,14 +8,13 @@ import java.time.Instant;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Map;
-
 import javax.sound.sampled.AudioFileFormat;
 import javax.sound.sampled.AudioFormat;
 import javax.sound.sampled.AudioSystem;
-
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
-
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import net.kcundercover.spectral_analyzer.data.Endianness;
 
 
@@ -26,6 +25,7 @@ import net.kcundercover.spectral_analyzer.data.Endianness;
  * as if it were a standard SigMF dataset.
  */
 public class NonconformingDatasetHelper {
+    private static final Logger NCD_LOGGER = LoggerFactory.getLogger(SigMfHelper.class);
     private File metaFile;
     private Global global;
     private Capture capture;
@@ -104,21 +104,23 @@ public class NonconformingDatasetHelper {
      * @param defaultCenterFreq Hz frequency fallback (since WAV files do not store RF frequencies)
      * @return Fully configured helper instance
      * @throws Exception If the file format is completely unreadable or invalid
+     * @throws IllegalArgumentException If the file does not exist or is not a valid WAV file
      */
     public static NonconformingDatasetHelper fromWavFile(File wavFile, long defaultCenterFreq) throws Exception {
         if (wavFile == null || !wavFile.exists()) {
             throw new IllegalArgumentException("Target WAV file reference must exist on disk.");
         }
 
-
-
         AudioFormat format = AudioSystem.getAudioFileFormat(wavFile).getFormat();
         int channels = format.getChannels();
         int bitDepth = format.getSampleSizeInBits();
         String encodingStr = format.getEncoding().toString();
 
-        // FIXME: can this have more than 2 channels?
+        if (channels > 2) {
+            throw new IllegalArgumentException("Unsupported WAV format: more than 2 channels is not supported for SDR data. Found " + channels + " channels.");
+        }
         String complexPrefix = (channels == 2) ? "c" : "r";
+        NCD_LOGGER.info("Parsed WAV file with {} channels, {}-bit depth, encoding: {}", channels, bitDepth, encodingStr);
 
         AudioFileFormat fileFormat = AudioSystem.getAudioFileFormat(wavFile);
         long totalFileLengthInBytes = wavFile.length();
@@ -127,6 +129,10 @@ public class NonconformingDatasetHelper {
         int bytesPerFrame = format.getFrameSize();             // Size of 1 I/Q pair combined
         long actualDataLengthInBytes = totalSampleFrames * bytesPerFrame;
         long headerBytes = totalFileLengthInBytes - actualDataLengthInBytes;
+        if (headerBytes % bytesPerFrame != 0 ) {
+            headerBytes -= headerBytes % bytesPerFrame; // Adjust to nearest frame boundary
+        }
+        NCD_LOGGER.info("Calculated header bytes: {}, total file length: {}, actual data length: {}", headerBytes, totalFileLengthInBytes, actualDataLengthInBytes);
 
         String baseDatatype;
         Endianness endianness = Endianness.LITTLE_ENDIAN; // RIFF WAVE format is natively Little-Endian

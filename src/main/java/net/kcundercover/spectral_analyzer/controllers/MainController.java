@@ -21,7 +21,7 @@ import javafx.scene.control.PasswordField;
 import javafx.scene.control.Slider;
 import javafx.scene.control.TextArea;
 import javafx.scene.control.TextField;
-// import javafx.scene.control.TextInputDialog;
+import javafx.scene.control.TextInputDialog;
 import javafx.scene.control.Tooltip;
 import javafx.scene.canvas.Canvas;
 import javafx.scene.canvas.GraphicsContext;
@@ -58,6 +58,7 @@ import java.io.InputStream;
 import java.net.URI;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
+
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
@@ -502,8 +503,34 @@ public class MainController {
             // If non-sigmf-meta, generate Non-Conforming Dataset Meta file
             // =======================================================
             if (selectedName.endsWith(".wav")) {
+                long centerFrequency = 0L;
                 try {
-                    NonconformingDatasetHelper helper = NonconformingDatasetHelper.fromWavFile(selectedFile, 0L);
+                    TextInputDialog freqDialog = new TextInputDialog("");
+                    freqDialog.initOwner(ownerWindow);
+                    freqDialog.setTitle("SigMF Metadata Input");
+                    freqDialog.setHeaderText("WAV File Parsed Successfully");
+                    freqDialog.setContentText("Enter the recording's Center Frequency (in Hz):");
+                    java.util.Optional<String> result = freqDialog.showAndWait();
+                    if (result.isPresent() && !result.get().strip().isEmpty()) {
+                        String input = result.get().strip();
+                        try {
+                            // Fix: Parse as double first to support scientific notation like "2.4e9"
+                            centerFrequency = (long) Long.parseLong(input);
+                        } catch (NumberFormatException e) {
+                            showErrorAlert(ownerWindow, "Invalid Format", "Please enter a valid numeric value.");
+                            return;
+                        }
+                    } else {
+                        MC_LOGGER.info("User canceled the input prompt.");
+                        return;
+                    }
+
+                    NonconformingDatasetHelper helper = NonconformingDatasetHelper.fromWavFile(selectedFile, centerFrequency);
+                    Path newMetaFilePath = Path.of(helper.getMetaFilePath()); // to trigger the meta file creation
+                    if (Files.exists(newMetaFilePath)) {
+                        MC_LOGGER.warn("Meta file ({}) already exists...aborting", newMetaFilePath);
+                        return;
+                    }
                     helper.writeSigMfFile();
                     MC_LOGGER.info("Extracted settings from WAV file");
 
