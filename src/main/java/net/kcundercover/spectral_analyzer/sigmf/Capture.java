@@ -18,6 +18,7 @@ public record Capture(
     @JsonProperty("core:sample_start") Long sampleStart,
     @JsonProperty("core:frequency") Double frequency,
     @JsonProperty("core:datetime") String datetime,
+    @JsonProperty("core:header_bytes") Long headerBytes,
     @JsonAnySetter
     @JsonAnyGetter
     Map<String, Object> extensions
@@ -36,6 +37,10 @@ public record Capture(
         }
         if (frequency == null) {
             frequency = Double.valueOf(0.0);
+        }
+
+        if (headerBytes == null) {
+            headerBytes = Long.valueOf(0L);
         }
         // Ensure map is initialized to avoid NullPointerExceptions
         extensions = (extensions == null) ? Map.of() : Map.copyOf(extensions);

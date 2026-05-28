@@ -63,6 +63,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+
 import net.rgielen.fxweaver.core.FxmlView;
 
 import org.springframework.beans.factory.annotation.Autowired;
@@ -477,8 +478,9 @@ public class MainController {
         // Set extension filters (useful for SDR/Audio files)
         fileChooser.getExtensionFilters().addAll(
             new FileChooser.ExtensionFilter("SigMF (*.sigmf-meta)", "*.sigmf-meta"),
-             new FileChooser.ExtensionFilter("Raw Signal Files (*.cs16, *.ci16, *.cu8, *.ci8, *.cf32, *.cf64)",
+            new FileChooser.ExtensionFilter("Raw Signal Files (*.cs16, *.ci16, *.cu8, *.ci8, *.cf32, *.cf64)",
         "*.cs16", "*.ci16", "*.cu8", "*.ci8", "*.cf32", "*.cf64", "*.iq", "*.raw"),
+            new FileChooser.ExtensionFilter("Wave Audio (*.wav)", "*.wav"),
             new FileChooser.ExtensionFilter("All Files", "*.*")
         );
 
@@ -496,7 +498,31 @@ public class MainController {
 
             // Add logic here to pass the file to your JDSP processing service
             String selectedName = selectedFile.getName().toLowerCase();
-            if (!selectedName.endsWith(".sigmf-meta")) {
+            // =======================================================
+            // If non-sigmf-meta, generate Non-Conforming Dataset Meta file
+            // =======================================================
+            if (selectedName.endsWith(".wav")) {
+                try {
+                    NonconformingDatasetHelper helper = NonconformingDatasetHelper.fromWavFile(selectedFile, 0L);
+                    helper.writeSigMfFile();
+                    MC_LOGGER.info("Extracted settings from WAV file");
+
+                    // update file to the new sigMF
+                    selectedFile = new File(helper.getMetaFilePath());
+
+                } catch (IllegalArgumentException e) {
+                    showErrorAlert(ownerWindow, "Failed to process WAV file", e.getMessage());
+                    return;
+                } catch (IOException e) {
+                    showErrorAlert(ownerWindow, "Failed to read WAV file", e.getMessage());
+                    return;
+                } catch (Exception e) {
+                    showErrorAlert(ownerWindow, "Unexpected error processing WAV file", e.getMessage());
+                    return;
+                }
+
+
+            } else if (!selectedName.endsWith(".sigmf-meta")) {
                 // Launch dialog to prompt user for info
                 Optional<RawSignalImportSettings> settings =
                     importRawFile(ownerWindow, selectedFile);
@@ -521,7 +547,10 @@ public class MainController {
                     selectedFile = new File(newMetaFilePath.toString());
                 }
             }
-            // SigMF Meta file
+
+            // =======================================================
+            // Load SigMF Meta file
+            // =======================================================
             try {
                 sigMfHelper.load(selectedFile.toPath());
 
@@ -1272,7 +1301,6 @@ public class MainController {
             frequencyRuler.getChildren().add(label);
         }
     }
-
 
     /**
      * Show an error alert dialog to the user

@@ -65,7 +65,7 @@ public class IqData {
 
         // ----------------------  create capture, global, metadata  ------------------------------
         // NOTE: these are immutable records...prepare all components to pass to constructor
-        Capture newCapture = new Capture(0L, newFc, newTimeStamp, Map.of());
+        Capture newCapture = new Capture(0L, newFc, newTimeStamp, Long.valueOf(0L), Map.of());
 
         Global newGlobal = new Global(
             "cf64_le",

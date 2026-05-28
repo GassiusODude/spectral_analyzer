@@ -2,6 +2,12 @@
 
 The Spectral Analyzer is a JavaFX application to load and analyze SigMF datasets.  The main view shows the spectrogram of the input signal along with the annotations list.  Custom color mappings can be applied to highlight various signals of interest.
 
+| Input File Format | Support |
+| :-: | :-: |
+| SigMF Recording (sigmf-data, sigmf-meta file pair) | Yes |
+| Raw (cs16, cf32, cf64, cu8, ci8) | Supported with Non-conforming dataset |
+| Wave Audio file | Supported with Non-conforming dataset |
+
 ## Installation
 
 ### Install Java

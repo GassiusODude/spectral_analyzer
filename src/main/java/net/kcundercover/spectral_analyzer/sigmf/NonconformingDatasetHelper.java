@@ -8,8 +8,16 @@ import java.time.Instant;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Map;
+
+import javax.sound.sampled.AudioFileFormat;
+import javax.sound.sampled.AudioFormat;
+import javax.sound.sampled.AudioSystem;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
+
+import net.kcundercover.spectral_analyzer.data.Endianness;
+
 
 /**
  * Helper class for handling non-conforming datasets that lack proper SigMF metadata.
@@ -31,6 +39,38 @@ public class NonconformingDatasetHelper {
      * @param dataType Data type string for SigMF metadata (e.g. "cf32_le", "ci16_le", etc.)
      */
     public NonconformingDatasetHelper(File file1, double sampleRate, double centerFreq, String dataType) {
+        String timestamp = getCaptureTimestamp(file1);
+        String datasetName = file1.getName();
+
+        this.metaFile = buildMetaFile(file1);
+
+        this.global = new Global(
+            dataType,
+            sampleRate,
+            "1.0.0",
+            datasetName,
+            Map.of());
+
+        this.capture = new Capture(
+            Long.valueOf(0L),   // samplestart
+            Double.valueOf(centerFreq), timestamp, Long.valueOf(0L), Map.of());
+
+        this.meta = new SigMfMetadata(
+            global,
+            List.of(capture),
+            List.of());
+
+    }
+
+    /**
+     * Constructor for NonconformingDatasetHelper
+     * @param file1 Raw data file without proper SigMF metadata
+     * @param sampleRate Sample rate of the data in Hz
+     * @param centerFreq Center frequency of the data in Hz
+     * @param dataType Data type string for SigMF metadata (e.g. "cf32_le", "ci16_le", etc.)
+     * @param headerBytes Number of bytes in the file that are header information (not raw signal data)
+     */
+    public NonconformingDatasetHelper(File file1, double sampleRate, double centerFreq, String dataType, Long headerBytes) {
         // This is a helper for non-conforming datasets that don't have proper SigMF metadata.
         // It creates a minimal SigMF metadata object based on the file name and provided parameters.
 
@@ -48,12 +88,70 @@ public class NonconformingDatasetHelper {
 
         this.capture = new Capture(
             Long.valueOf(0L),   // samplestart
-            Double.valueOf(centerFreq), timestamp, Map.of());
+            Double.valueOf(centerFreq), timestamp, headerBytes, Map.of());
 
         this.meta = new SigMfMetadata(
             global,
             List.of(capture),
             List.of());
+    }
+
+      /**
+     * Static Generator Factory Method
+     * Parses a local WAV file's headers and builds an operational helper instance.
+     *
+     * @param wavFile The source target audio signal file
+     * @param defaultCenterFreq Hz frequency fallback (since WAV files do not store RF frequencies)
+     * @return Fully configured helper instance
+     * @throws Exception If the file format is completely unreadable or invalid
+     */
+    public static NonconformingDatasetHelper fromWavFile(File wavFile, long defaultCenterFreq) throws Exception {
+        if (wavFile == null || !wavFile.exists()) {
+            throw new IllegalArgumentException("Target WAV file reference must exist on disk.");
+        }
+
+
+
+        AudioFormat format = AudioSystem.getAudioFileFormat(wavFile).getFormat();
+        int channels = format.getChannels();
+        int bitDepth = format.getSampleSizeInBits();
+        String encodingStr = format.getEncoding().toString();
+
+        // FIXME: can this have more than 2 channels?
+        String complexPrefix = (channels == 2) ? "c" : "r";
+
+        AudioFileFormat fileFormat = AudioSystem.getAudioFileFormat(wavFile);
+        long totalFileLengthInBytes = wavFile.length();
+        // Extract sample frame length and frame size configurations
+        long totalSampleFrames = fileFormat.getFrameLength(); // Total index positions
+        int bytesPerFrame = format.getFrameSize();             // Size of 1 I/Q pair combined
+        long actualDataLengthInBytes = totalSampleFrames * bytesPerFrame;
+        long headerBytes = totalFileLengthInBytes - actualDataLengthInBytes;
+
+        String baseDatatype;
+        Endianness endianness = Endianness.LITTLE_ENDIAN; // RIFF WAVE format is natively Little-Endian
+
+        if (encodingStr.contains("FLOAT") && bitDepth == 32) {
+            baseDatatype = complexPrefix + "f32";
+        } else if (bitDepth == 16) {
+            baseDatatype = complexPrefix + "i16";
+        } else if (bitDepth == 8) {
+            baseDatatype = complexPrefix + "u8";
+            endianness = Endianness.NOT_APPLICABLE; // 8-bit registers do not possess byte order metrics
+        } else {
+            // Fallback rule for uncommon formats (e.g. 24-bit audio or 64-bit int waves)
+            baseDatatype = complexPrefix + "f32";
+        }
+        String dtype;
+        switch (endianness) {
+            case LITTLE_ENDIAN-> dtype = baseDatatype + "_le";
+            case BIG_ENDIAN -> dtype = baseDatatype + "_be";
+            default -> dtype = baseDatatype; // For formats where endianness is not applicable
+        }
+
+        double sampleRate = format.getSampleRate();
+        NonconformingDatasetHelper output = new NonconformingDatasetHelper(wavFile, sampleRate, defaultCenterFreq, dtype, headerBytes);
+        return output;
     }
 
     /**
