@@ -35,6 +35,7 @@ public class SpectralService {
         boolean isCi16 = datatype.startsWith("ci16");
         boolean isCf32 = datatype.startsWith("cf32");
         boolean isCu8 = datatype.startsWith("cu8");
+        boolean isCi8 = datatype.startsWith("ci8");
 
         for (int i = 0; i < nfft; i++) {
             double real, imag;
@@ -51,6 +52,11 @@ public class SpectralService {
                 imag = buffer.get(startByte + (i * 2) + 1) & 0xFF;
                 real = (real - 127.5) / 128;
                 imag = (imag - 127.5) / 128;
+            } else if (isCi8) {
+                real = buffer.get(startByte + (i * 2));
+                imag = buffer.get(startByte + (i * 2) + 1);
+                real = real / 128;
+                imag = imag / 128;
             } else {
                 real = 0.0;
                 imag = 0.0;

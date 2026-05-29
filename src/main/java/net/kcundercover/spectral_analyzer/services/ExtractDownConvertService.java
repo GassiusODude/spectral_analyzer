@@ -89,10 +89,8 @@ public class ExtractDownConvertService {
                 real = (real - 127.5) / 128;
                 imag = (imag - 127.5) / 128;
             } else if (datatype.startsWith("ci8")) {
-                real = buffer.get((int) byteOffset ) & 0xFF;
-                imag = buffer.get((int) (byteOffset + 1)) & 0xFF;
-                real = real / 128;
-                imag = imag / 128;
+                real = buffer.get((int) byteOffset) / 128;
+                imag = buffer.get((int) (byteOffset + 1)) / 128.0;
             } else {
                 real = buffer.getFloat((int) byteOffset);
                 imag = buffer.getFloat((int) byteOffset + 4);
