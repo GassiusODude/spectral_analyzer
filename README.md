@@ -7,6 +7,16 @@ The Spectral Analyzer is a JavaFX application to load and analyze SigMF datasets
   * Raw (cs16, cf32, cf64, cu8, ci8)
   * Wave Audio file
 
+Youtube demo videos
+
+* [Spectral Analyzer v0.3.0](https://youtu.be/9YdjNSgmXHg)
+  * Show adding/removing annotations
+  * Viewing Magnitude/Frequency/PSD plots
+  * Connecting to REST API
+* [Spectral Analyzer v0.5.0 with HaLow OFDM Receiver](https://youtu.be/zFlG76Eu1ZU)
+  * TableView to view annotations and sort by frequency, bandwidth, time start or duration
+  * Batch processing annotations through a REST capability (HaLow Receiver)
+
 ## Installation
 
 ### Install Java
