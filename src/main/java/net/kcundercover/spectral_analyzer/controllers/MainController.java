@@ -83,12 +83,14 @@ import net.kcundercover.spectral_analyzer.data.RawSignalImportSettings;
 import net.kcundercover.spectral_analyzer.rest.Capability;
 import net.kcundercover.spectral_analyzer.rest.RestHelper;
 import net.kcundercover.spectral_analyzer.sigmf.SigMfHelper;
+import net.kcundercover.spectral_analyzer.utils.ColorUtils;
 import net.kcundercover.spectral_analyzer.sigmf.NonconformingDatasetHelper;
 import net.kcundercover.spectral_analyzer.sigmf.SigMfAnnotation;
 import net.kcundercover.spectral_analyzer.services.AsyncExtractDownConvertService;
 import net.kcundercover.spectral_analyzer.services.ExtractDownConvertService;
 import net.kcundercover.spectral_analyzer.services.SpectralService;
-
+import net.kcundercover.spectral_analyzer.data.AppConfiguration;
+import net.kcundercover.spectral_analyzer.services.ConfigurationService;
 
 
 /**
@@ -98,9 +100,11 @@ import net.kcundercover.spectral_analyzer.services.SpectralService;
 @FxmlView("main-scene.fxml")
 public class MainController {
     /** Default constructor */
-    public MainController(){
+    public MainController(ConfigurationService configService) {
+        this.configService = configService;
 
     }
+
     @Autowired
     private ApplicationContext applicationContext;
 
@@ -119,6 +123,9 @@ public class MainController {
     private File lastOpenedDirectory;
     private Path inputFile;
     private long totalSamples;
+
+    private final ConfigurationService configService;
+
 
     /**
      * Custom style for annotation based on label
@@ -251,13 +258,53 @@ public class MainController {
      */
     @FXML
     public void initialize() {
-        annotationColorPicker.setValue(Color.MAGENTA);
-        selectColorPicker.setValue(Color.LIME);
+        // ========================================================================================
+        // Load default settings from AppData
+        // ========================================================================================
+        AppConfiguration appData = configService.getActiveConfig();
+        annotationColorPicker.setValue(
+            ColorUtils.fromHexString(appData.getAnnotColor()));
+        annotationColorPicker.valueProperty().addListener((observable, oldValue, newValue) -> {
+            if (newValue != null) {
+                updateDisplay();
+
+                // update config
+                AppConfiguration config = configService.getActiveConfig();
+                config.setAnnotColor(ColorUtils.toHexString(newValue));
+                configService.saveCurrentConfig(config);
+            }
+        });
+        selectColorPicker.setValue(
+            ColorUtils.fromHexString(appData.getSelectColor()));
+        selectColorPicker.valueProperty().addListener((observable, oldValue, newValue) -> {
+            if (newValue != null) {
+                updateDisplay();
+
+                // update config
+                AppConfiguration config = configService.getActiveConfig();
+                config.setSelectColor(ColorUtils.toHexString(newValue));
+                configService.saveCurrentConfig(config);
+            }
+        });
+        comboColorMap.setValue(appData.getColorMap());
+
+        lastOpenedDirectory = new File(appData.getLastUsedDataDirectory());
+
+        // load config for FFT
+        nfftSlider.setValue(appData.getFftPower());
+        fftSize = (int) Math.pow(2, appData.getFftPower());
+        lblNfftValue.setText(String.valueOf(fftSize));
+
         resetSelection();
 
         comboColorMap.valueProperty().addListener((observable, oldValue, newValue) -> {
             if (newValue != null) {
                 updateDisplay();
+
+                // update config
+                AppConfiguration config = configService.getActiveConfig();
+                config.setColorMap(newValue);
+                configService.saveCurrentConfig(config);
             }
         });
 
@@ -299,6 +346,13 @@ public class MainController {
             // Enforce integer steps and calculate power of 2
             int exponent = newVal.intValue();
             fftSize = (int) Math.pow(2, exponent);
+
+            // track in config
+            // ------------------------------------------
+            AppConfiguration config = configService.getActiveConfig();
+            config.setFftPower(exponent);
+            configService.saveCurrentConfig(config);
+            MC_LOGGER.warn("Updating NFFT to " + exponent);
 
             // Update UI
             lblNfftValue.setText(String.valueOf(fftSize));
@@ -495,6 +549,12 @@ public class MainController {
         if (selectedFile != null) {
             // track the directory for next time this is called.
             lastOpenedDirectory = selectedFile.getParentFile();
+
+            // store last directory
+            AppConfiguration config = configService.getActiveConfig();
+            config.setLastUsedDataDirectory(lastOpenedDirectory.getAbsolutePath());
+            configService.saveCurrentConfig(config);
+
             MC_LOGGER.info("Selected file: {}", selectedFile.getAbsolutePath());
 
             // Add logic here to pass the file to your JDSP processing service
@@ -1176,6 +1236,7 @@ public class MainController {
         });
         return rect;
     }
+
 
 
     /**

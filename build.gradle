@@ -18,6 +18,16 @@ java {
 		languageVersion = JavaLanguageVersion.of(21)
 	}
 }
+
+// ============================================================================
+// 				Dynamically Identify the Container OS at Compile Time
+// ============================================================================
+def currentOs = System.getProperty("os.name").toLowerCase()
+def targetPlatform = currentOs.contains("win") ? "win" : currentOs.contains("linux") ? "linux" : "mac"
+
+logger.lifecycle("🚀 CI/CD Pipeline Detected Container OS: ${targetPlatform.toUpperCase()}")
+
+
 javafx {
     version = "21.0.10"
     modules = [ 'javafx.controls', 'javafx.fxml' ]
@@ -29,12 +39,14 @@ javafx {
 // NOTE: Set up bootJar to support the Spring boot JavaFX application
 bootJar {
 	// Detect OS for naming
-    def os = System.getProperty("os.name").toLowerCase()
-    def platform = os.contains("win") ? "win" : os.contains("linux") ? "linux" : "mac"
+    // def os = System.getProperty("os.name").toLowerCase()
+    // def platform = os.contains("win") ? "win" : os.contains("linux") ? "linux" : "mac"
 
-    // label archive based on operating system
-    archiveClassifier = "boot-${platform}" // Result: -boot-win or -boot-linux
+    // // label archive based on operating system
+    // archiveClassifier = "boot-${platform}" // Result: -boot-win or -boot-linux
 
+    // Explicitly names your artifacts based on the active container (e.g., -boot-win.jar)
+    archiveClassifier = "boot-${targetPlatform}"
     manifest {
         attributes(
             "Implementation-Title": "Spectral Analyzer",
@@ -55,6 +67,13 @@ bootJar {
 
         into "META-INF"
     }
+}
+
+shadowJar {
+    archiveClassifier = "shaded-${targetPlatform}"
+    mergeServiceFiles()
+    append 'META-INF/spring.handlers'
+    append 'META-INF/spring.schemas'
 }
 
 // shadowJar {
@@ -100,18 +119,6 @@ repositories {
 	// Use local maven repo if available (for JDSP dependency)
 	mavenLocal()
 
-    // NOTE: This worked in Github Actions, but requires setting up
-    //       username and access token otherwise.
-    //       Migrated to use "https://jitpack.io" instead
-	// If no local, then pull from repo (Github CI)
-    // maven {
-    //     url 'https://maven.pkg.github.com/GassiusODude/jdsp'
-    //     credentials {
-    //         username = project.findProperty("gpr.user") ?: System.getenv("USERNAME")
-    //         password = project.findProperty("gpr.token") ?: System.getenv("TOKEN")
-    //     }
-    // }
-
     mavenCentral()
 
 	// Jitpack.io
@@ -120,16 +127,28 @@ repositories {
 
 dependencies {
     def javafxVersion = "21.0.2" // Match your Java version
-    def platforms = ['win', 'linux', 'mac']
+    // def platforms = ['win', 'linux', 'mac']
 
-    platforms.each { platform ->
-        implementation "org.openjfx:javafx-controls:${javafxVersion}:${platform}"
-        implementation "org.openjfx:javafx-graphics:${javafxVersion}:${platform}"
-        implementation "org.openjfx:javafx-fxml:${javafxVersion}:${platform}"
-        // Add others like javafx-media if needed
-    }
+    // platforms.each { platform ->
+    //     implementation "org.openjfx:javafx-controls:${javafxVersion}:${platform}"
+    //     implementation "org.openjfx:javafx-graphics:${javafxVersion}:${platform}"
+    //     implementation "org.openjfx:javafx-fxml:${javafxVersion}:${platform}"
 
+    //     // Add others like javafx-media if needed
+    // }
 
+    // Instead of looping all platforms, this ONLY grabs the active runner's files
+    implementation "org.openjfx:javafx-controls:${javafxVersion}:${targetPlatform}"
+    implementation "org.openjfx:javafx-graphics:${javafxVersion}:${targetPlatform}"
+    implementation "org.openjfx:javafx-fxml:${javafxVersion}:${targetPlatform}"
+
+     // --- NATIVE SYSTEM DRIVERS ---
+    // JNA packages are extremely lightweight (<5MB) and dynamically bundle
+    // native drivers for BOTH Windows (.dll) and Linux (.so) profiles.
+    implementation 'net.java.dev.jna:jna:5.14.0'
+    implementation 'net.java.dev.jna:jna-platform:5.14.0'
+
+    // --- Common CORE libraries ---
 	implementation 'org.springframework.boot:spring-boot-starter-webmvc'
 	implementation 'net.rgielen:javafx-weaver-spring-boot-starter:2.0.1'
 
@@ -154,9 +173,11 @@ dependencies {
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 
-
 application {
-    mainClass = 'net.kcundercover.spectral_analyzer.MainApp'
+    mainClass = 'net.kcundercover.spectral_analyzer.SpectralAnalyzerApplication'
+
+    // Points to our wrapper launcher to dodge the native classloader bug on Ubuntu
+    // mainClass = 'net.kcundercover.spectral_analyzer.JarLauncher'
 }
 
 // Optional: Configure them to show HTML reports
