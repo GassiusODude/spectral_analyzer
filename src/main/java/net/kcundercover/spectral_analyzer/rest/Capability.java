@@ -20,6 +20,10 @@ import org.slf4j.LoggerFactory;
  */
 public class Capability {
     private static final Logger CAP_LOGGER = LoggerFactory.getLogger(Capability.class);
+
+    // Move ObjectMapper to be a class field, initialized once
+    private static final ObjectMapper mapper = new ObjectMapper();
+
     private final String path;
     private final String baseUrl;
     private final JsonNode metadata;
@@ -77,59 +81,138 @@ public class Capability {
      * @return The Json Node
      */
     private JsonNode resolveProperties(JsonNode operation, JsonNode root) {
-        JsonNode jsonSchema = operation.at("/requestBody/content/application~1json/schema");
+        boolean isOpenApi = root.has("openapi");
+        if (isOpenApi) {
+            return resolveOpenApiProperties(operation, root);
+        } else {
+            return resolveSwaggerProperties(operation, root);
+        }
+    }
 
-        // try to find Octet-Stream
-        JsonNode binarySchema = operation.at("/requestBody/content/application~1octet-stream/schema");
+     // Helper method to resolve $ref for JSON schemas (like in FastAPI)
+    private JsonNode resolveJsonSchema(JsonNode schemaNode, JsonNode root) {
+        if (schemaNode.has("$ref")) {
+            String refPath = schemaNode.get("$ref").asText().substring(1);
+            return root.at(refPath + "/properties");
+        }
+        return schemaNode.path("properties");
+    }
+    private JsonNode resolveOpenApiProperties(JsonNode operation, JsonNode root) {
+        ObjectNode flattenedParams = mapper.createObjectNode();
 
-        if (!jsonSchema.isMissingNode()) {
-            if (jsonSchema.has("$ref")) {
-                // references to
-                CAP_LOGGER.info("Reference link found");
-                return root.at(jsonSchema.get("$ref").asText().substring(1) + "/properties");
+        // 1. Handle Request Body (JSON or Octet-Stream)
+        // This is where most of your FastAPI payload definitions will be
+        JsonNode requestBodyNode = operation.path("requestBody");
+        if (!requestBodyNode.isMissingNode()) {
+            // Check for application/json in requestBody
+            JsonNode jsonSchemaNode = requestBodyNode.at("/content/application~1json/schema");
+            if (!jsonSchemaNode.isMissingNode()) {
+                JsonNode resolvedJsonProps = resolveJsonSchema(jsonSchemaNode, root);
+                resolvedJsonProps.fields().forEachRemaining(entry ->
+                    flattenedParams.set(entry.getKey(), entry.getValue()));
+                CAP_LOGGER.info("Detected OpenAPI 3.0 JSON Request Body");
             }
-            CAP_LOGGER.info("schema is not missing node()");
-            return jsonSchema.path("properties");
+
+            // Check for application/octet-stream in requestBody
+            JsonNode binarySchemaNode = requestBodyNode.at("/content/application~1octet-stream/schema");
+            if (!binarySchemaNode.isMissingNode()) {
+                ObjectNode binaryParam = mapper.createObjectNode();
+                binaryParam.put("description", "Byte Array");
+                flattenedParams.set("Binary Request Body", binaryParam);
+                CAP_LOGGER.info("Detected OpenAPI 3.0 Binary Request Body");
+            }
         }
 
-        // Try to get parameters for GET/DELETE (Parameters Array)
+        // 2. Handle Parameters Array (query, header, path, cookie params)
+        // This is where 'dtype' will be if it's a query parameter in OAI 3.0
         JsonNode parameters = operation.path("parameters");
-        CAP_LOGGER.info("Parameters field " + parameters.toPrettyString());
-
-        ObjectMapper mapper = new ObjectMapper();
         if (parameters.isArray()) {
-            CAP_LOGGER.trace("Capabilities has array of parameter");
-            ObjectNode flattenedParams = mapper.createObjectNode();
-            if (binarySchema != null) {
-                CAP_LOGGER.trace("Detected Binary Schema");
-                ObjectNode binaryParam = mapper.createObjectNode();
-                binaryParam.put("type", "buffer");
-                binaryParam.put("description", "Byte Array");
-
-                flattenedParams.set("Binary Request Body", binaryParam);
-
-            }
+            CAP_LOGGER.info("Processing OpenAPI 3.0 parameters field: {}", parameters.toPrettyString());
             for (JsonNode param : parameters) {
                 String name = param.path("name").asText();
                 JsonNode paramSchema = param.path("schema");
 
-                // NOTE: handle case where schema is defined in a reference
-                if (paramSchema.has("$ref")) {
+                if (paramSchema.isMissingNode()) { // Sometimes schema is direct (e.g., simple type)
+                    ObjectNode directSchema = mapper.createObjectNode();
+                    if (param.has("type")) directSchema.set("type", param.get("type"));
+                    if (param.has("format")) directSchema.set("format", param.get("format"));
+                    if (param.has("enum")) directSchema.set("enum", param.get("enum"));
+                    if (param.has("description")) directSchema.set("description", param.get("description"));
+                    paramSchema = directSchema;
+                } else if (paramSchema.has("$ref")) { // Handle references for parameter schemas
                     String refPath = paramSchema.get("$ref").asText();
-
                     String jsonPointer = refPath.substring(1);
-                    paramSchema = root.at(jsonPointer);
+                    paramSchema = root.at(jsonPointer); // Resolve reference from root
                 }
-
                 flattenedParams.set(name, paramSchema);
-                CAP_LOGGER.info("Parameter({}) with {}", name, paramSchema.toString());
+                CAP_LOGGER.info("Added parameter '{}' with schema: {}", name, paramSchema.toString());
             }
-            return flattenedParams;
         }
-        return mapper.createObjectNode(); // Return empty if nothing found
+
+        return flattenedParams;
     }
 
 
+// Inside Capability.java
+
+// ... other methods ...
+
+private JsonNode resolveSwaggerProperties(JsonNode operation, JsonNode root) {
+    ObjectNode flattenedParams = mapper.createObjectNode();
+
+    // 1. Check for consumes (Binary Request Body)
+    boolean isBinary = false;
+    if (operation.has("consumes")) {
+        for (JsonNode c : operation.get("consumes")) {
+            if ("application/octet-stream".equals(c.asText())) {
+                isBinary = true;
+                break;
+            }
+        }
+    }
+
+    if (isBinary) {
+        // Add "Binary Request Body" if it's an octet-stream endpoint
+        ObjectNode binaryParam = mapper.createObjectNode();
+        binaryParam.put("type", "buffer");
+        binaryParam.put("description", "Byte Array");
+        flattenedParams.set("Binary Request Body", binaryParam);
+        CAP_LOGGER.info("Detected Binary Request Body via consumes for Swagger 2.0");
+    }
+
+    // 2. Process the 'parameters' array (This is where 'dtype' will be found!)
+    JsonNode parameters = operation.path("parameters");
+    if (parameters.isArray()) {
+        CAP_LOGGER.info("Processing Swagger 2.0 parameters field: {}", parameters.toPrettyString());
+        for (JsonNode param : parameters) {
+            String name = param.path("name").asText();
+            JsonNode paramSchema = param.path("schema"); // This could be missing for Swagger 2.0 'type' field
+
+            // Swagger 2.0 parameters don't always have a 'schema' object.
+            // They can have 'type', 'format', 'enum' directly.
+            if (paramSchema.isMissingNode()) {
+                // If no 'schema' object, create one from direct parameter properties
+                ObjectNode directSchema = mapper.createObjectNode();
+                if (param.has("type")) directSchema.set("type", param.get("type"));
+                if (param.has("format")) directSchema.set("format", param.get("format"));
+                if (param.has("enum")) directSchema.set("enum", param.get("enum"));
+                if (param.has("description")) directSchema.set("description", param.get("description"));
+                paramSchema = directSchema; // Use this constructed schema
+            } else {
+                // Handle case where schema is defined in a reference (less common in direct params for Swagger 2.0)
+                if (paramSchema.has("$ref")) {
+                    String refPath = paramSchema.get("$ref").asText();
+                    String jsonPointer = refPath.substring(1);
+                    paramSchema = root.at(jsonPointer);
+                }
+            }
+            flattenedParams.set(name, paramSchema);
+            CAP_LOGGER.info("Added parameter '{}' with schema: {}", name, paramSchema.toString());
+        }
+    }
+
+    return flattenedParams;
+}
     /**
      * Get method for the baseUrl
      * @return The base URL for the capability
