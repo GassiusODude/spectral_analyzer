@@ -22,7 +22,7 @@ public class Capability {
     private static final Logger CAP_LOGGER = LoggerFactory.getLogger(Capability.class);
 
     // Move ObjectMapper to be a class field, initialized once
-    private static final ObjectMapper mapper = new ObjectMapper();
+    private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private final String path;
     private final String baseUrl;
@@ -98,7 +98,7 @@ public class Capability {
         return schemaNode.path("properties");
     }
     private JsonNode resolveOpenApiProperties(JsonNode operation, JsonNode root) {
-        ObjectNode flattenedParams = mapper.createObjectNode();
+        ObjectNode flattenedParams = MAPPER.createObjectNode();
 
         // 1. Handle Request Body (JSON or Octet-Stream)
         // This is where most of your FastAPI payload definitions will be
@@ -116,7 +116,7 @@ public class Capability {
             // Check for application/octet-stream in requestBody
             JsonNode binarySchemaNode = requestBodyNode.at("/content/application~1octet-stream/schema");
             if (!binarySchemaNode.isMissingNode()) {
-                ObjectNode binaryParam = mapper.createObjectNode();
+                ObjectNode binaryParam = MAPPER.createObjectNode();
                 binaryParam.put("description", "Byte Array");
                 flattenedParams.set("Binary Request Body", binaryParam);
                 CAP_LOGGER.info("Detected OpenAPI 3.0 Binary Request Body");
@@ -133,11 +133,19 @@ public class Capability {
                 JsonNode paramSchema = param.path("schema");
 
                 if (paramSchema.isMissingNode()) { // Sometimes schema is direct (e.g., simple type)
-                    ObjectNode directSchema = mapper.createObjectNode();
-                    if (param.has("type")) directSchema.set("type", param.get("type"));
-                    if (param.has("format")) directSchema.set("format", param.get("format"));
-                    if (param.has("enum")) directSchema.set("enum", param.get("enum"));
-                    if (param.has("description")) directSchema.set("description", param.get("description"));
+                    ObjectNode directSchema = MAPPER.createObjectNode();
+                    if (param.has("type")) {
+                        directSchema.set("type", param.get("type"));
+                    }
+                    if (param.has("format")) {
+                        directSchema.set("format", param.get("format"));
+                    }
+                    if (param.has("enum")) {
+                        directSchema.set("enum", param.get("enum"));
+                    }
+                    if (param.has("description")) {
+                        directSchema.set("description", param.get("description"));
+                    }
                     paramSchema = directSchema;
                 } else if (paramSchema.has("$ref")) { // Handle references for parameter schemas
                     String refPath = paramSchema.get("$ref").asText();
@@ -158,7 +166,7 @@ public class Capability {
 // ... other methods ...
 
 private JsonNode resolveSwaggerProperties(JsonNode operation, JsonNode root) {
-    ObjectNode flattenedParams = mapper.createObjectNode();
+    ObjectNode flattenedParams = MAPPER.createObjectNode();
 
     // 1. Check for consumes (Binary Request Body)
     boolean isBinary = false;
@@ -173,7 +181,7 @@ private JsonNode resolveSwaggerProperties(JsonNode operation, JsonNode root) {
 
     if (isBinary) {
         // Add "Binary Request Body" if it's an octet-stream endpoint
-        ObjectNode binaryParam = mapper.createObjectNode();
+        ObjectNode binaryParam = MAPPER.createObjectNode();
         binaryParam.put("type", "buffer");
         binaryParam.put("description", "Byte Array");
         flattenedParams.set("Binary Request Body", binaryParam);
@@ -192,11 +200,19 @@ private JsonNode resolveSwaggerProperties(JsonNode operation, JsonNode root) {
             // They can have 'type', 'format', 'enum' directly.
             if (paramSchema.isMissingNode()) {
                 // If no 'schema' object, create one from direct parameter properties
-                ObjectNode directSchema = mapper.createObjectNode();
-                if (param.has("type")) directSchema.set("type", param.get("type"));
-                if (param.has("format")) directSchema.set("format", param.get("format"));
-                if (param.has("enum")) directSchema.set("enum", param.get("enum"));
-                if (param.has("description")) directSchema.set("description", param.get("description"));
+                ObjectNode directSchema = MAPPER.createObjectNode();
+                if (param.has("type")) {
+                    directSchema.set("type", param.get("type"));
+                }
+                if (param.has("format")) {
+                    directSchema.set("format", param.get("format"));
+                }
+                if (param.has("enum")) {
+                    directSchema.set("enum", param.get("enum"));
+                }
+                if (param.has("description")) {
+                    directSchema.set("description", param.get("description"));
+                }
                 paramSchema = directSchema; // Use this constructed schema
             } else {
                 // Handle case where schema is defined in a reference (less common in direct params for Swagger 2.0)
