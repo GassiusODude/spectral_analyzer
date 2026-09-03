@@ -104,13 +104,16 @@ public class Capability {
         // This is where most of your FastAPI payload definitions will be
         JsonNode requestBodyNode = operation.path("requestBody");
         if (!requestBodyNode.isMissingNode()) {
-            // Check for application/json in requestBody
+            // Check for application/json or application/x-www-form-urlencoded in requestBody
             JsonNode jsonSchemaNode = requestBodyNode.at("/content/application~1json/schema");
+            if (jsonSchemaNode.isMissingNode()) {
+                jsonSchemaNode = requestBodyNode.at("/content/application~1x-www-form-urlencoded/schema");
+            }
             if (!jsonSchemaNode.isMissingNode()) {
                 JsonNode resolvedJsonProps = resolveJsonSchema(jsonSchemaNode, root);
                 resolvedJsonProps.fields().forEachRemaining(entry ->
                     flattenedParams.set(entry.getKey(), entry.getValue()));
-                CAP_LOGGER.info("Detected OpenAPI 3.0 JSON Request Body");
+                CAP_LOGGER.info("Detected OpenAPI 3.0 JSON / Form Request Body");
             }
 
             // Check for application/octet-stream in requestBody

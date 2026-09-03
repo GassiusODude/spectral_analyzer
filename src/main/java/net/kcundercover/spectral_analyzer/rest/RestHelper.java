@@ -17,6 +17,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.prefs.Preferences;
+import java.util.stream.StreamSupport;
 
 import javafx.application.Platform;
 import javafx.scene.control.Alert;
@@ -55,10 +57,30 @@ public class RestHelper {
     Map<String, Capability> capabilities = new HashMap<>();
 
     /**
-     * Create HttpClient with optional trust-all SSL context for local development.
-     * @param allowInsecure whether to trust all certificates (for local self-signed HTTPS)
-     * @return Configured HttpClient
+     * Save JWT token securely to user preferences (Java Preferences API / AppData node)
+     * @param serverKey unique identifier for the server (e.g. baseUrl)
+     * @param token JWT token string
      */
+    public static void saveAuthToken(String serverKey, String token) {
+        Preferences prefs = Preferences.userNodeForPackage(RestHelper.class);
+        if (token != null && !token.trim().isEmpty()) {
+            prefs.put("JWT_TOKEN_" + serverKey.hashCode(), token);
+            RH_LOGGER.info("Saved JWT token securely for server: {}", serverKey);
+        } else {
+            prefs.remove("JWT_TOKEN_" + serverKey.hashCode());
+            RH_LOGGER.info("Removed JWT token for server: {}", serverKey);
+        }
+    }
+
+    /**
+     * Retrieve stored JWT token for the specified server from user preferences.
+     * @param serverKey unique identifier for the server (e.g. baseUrl)
+     * @return JWT token or null if not found
+     */
+    public static String getAuthToken(String serverKey) {
+        Preferences prefs = Preferences.userNodeForPackage(RestHelper.class);
+        return prefs.get("JWT_TOKEN_" + serverKey.hashCode(), null);
+    }
     private HttpClient createHttpClient(boolean allowInsecure) {
         HttpClient.Builder builder = HttpClient.newBuilder()
             .version(HttpClient.Version.HTTP_1_1)
@@ -181,53 +203,94 @@ public class RestHelper {
 
         if (cap.getMethod() == HttpMethod.POST) {
             // ============================================================
-            // Prepare POST request
+            // Prepare POST request (Query Parameters vs JSON Request Body vs Binary Body)
             // ============================================================
             final byte[][] binaryPayloadWrapper = new byte[1][];
+            Map<String, Object> jsonPayloadMap = new HashMap<>();
             StringBuilder queryParams = new StringBuilder("?");
 
             userInputs.forEach((key, value) -> {
-                // Check if this is our special binary buffer key
                 if ("Binary Request Body".equals(key)) {
-                    // Pull the actual byte[] from your data mapping using the selected key
                     String selectedBufferKey = value.toString();
                     binaryPayloadWrapper[0] = (byte[]) iq.getDataBuffer().get(selectedBufferKey);
                     RH_LOGGER.info("key = " + key + "\tSelected = " + selectedBufferKey);
-
                 } else {
-                    // Everything else is a Query Parameter for the URL
-                    if (queryParams.length() > 1) {
-                        queryParams.append("&");
+                    // Check if the schema defines this parameter as in "query" or if it belongs in the request body
+                    // (Authentication/register endpoints put properties in JSON body; parameter-heavy routes use query string)
+                    boolean isQueryParam = cap.getMetadata().has("parameters") &&
+                        StreamSupport.stream(cap.getMetadata().get("parameters").spliterator(), false)
+                            .anyMatch(p -> key.equals(p.path("name").asText()) && "query".equals(p.path("in").asText()));
+
+                    if (isQueryParam) {
+                        if (queryParams.length() > 1) {
+                            queryParams.append("&");
+                        }
+                        String encodedValue = URLEncoder.encode(value.toString(), StandardCharsets.UTF_8);
+                        queryParams.append(key).append("=").append(encodedValue);
+                    } else {
+                        // Otherwise, treat as JSON request body (e.g. login/register request body fields)
+                        jsonPayloadMap.put(key, value);
                     }
-                    // NOTE: use encoding to avoid issues with spaces (" " -> "%20")
-                    String encodedValue = URLEncoder.encode(value.toString(), StandardCharsets.UTF_8);
-                    queryParams.append(key).append("=").append(encodedValue);
                 }
             });
 
             byte[] binaryPayload = binaryPayloadWrapper[0];
-
-            // ============================================================
-            // Send POST request
-            // ============================================================
-            // Construct the URL with query parameters
-            String fullUrl = cap.getBaseUrl() + cap.getPath() + queryParams.toString();
+            String fullUrl = cap.getBaseUrl() + cap.getPath() + (queryParams.length() > 1 ? queryParams.toString() : "");
 
             HttpRequest.Builder requestBuilder = HttpRequest.newBuilder()
-                .uri(URI.create(fullUrl))
-                .header("Content-Type", "application/octet-stream");
+                .uri(URI.create(fullUrl));
+
+            if (cap.getApiKey() != null && !cap.getApiKey().trim().isEmpty()) {
+                requestBuilder.header("x-api-key", cap.getApiKey());
+            }
+
+            // Automatically attach Bearer token if available for this server
+            String jwtToken = getAuthToken(cap.getBaseUrl());
+            if (jwtToken != null && !jwtToken.trim().isEmpty()) {
+                requestBuilder.header("Authorization", "Bearer " + jwtToken);
+            }
 
             if (binaryPayload != null) {
-                // Limit to under 50 MB
                 if (binaryPayload.length > MAX_SIZE) {
                     RH_LOGGER.error("Payload too large: " + binaryPayload.length + " bytes. Capping at 50MB.");
                     return "REST capability exceeds maximum binary Payload of 50 MB";
                 } else {
                     RH_LOGGER.trace("Binary Payload added to request with " + binaryPayload.length + " bytes");
-                    requestBuilder.POST(HttpRequest.BodyPublishers.ofByteArray(binaryPayload));
+                    requestBuilder.header("Content-Type", "application/octet-stream")
+                                  .POST(HttpRequest.BodyPublishers.ofByteArray(binaryPayload));
+                }
+            } else if (!jsonPayloadMap.isEmpty()) {
+                boolean isFormUrlEncoded = cap.getMetadata().path("requestBody")
+                    .path("content").has("application/x-www-form-urlencoded");
+
+                try {
+                    if (isFormUrlEncoded) {
+                        StringBuilder formBody = new StringBuilder();
+                        jsonPayloadMap.forEach((k, v) -> {
+                            if (formBody.length() > 0) {
+                                formBody.append("&");
+                            }
+                            formBody.append(URLEncoder.encode(k, StandardCharsets.UTF_8))
+                                    .append("=")
+                                    .append(URLEncoder.encode(String.valueOf(v), StandardCharsets.UTF_8));
+                        });
+                        RH_LOGGER.trace("Form-urlencoded Request Body added to request: {}", formBody);
+                        requestBuilder.header("Content-Type", "application/x-www-form-urlencoded")
+                                      .header("Accept", "application/json")
+                                      .POST(HttpRequest.BodyPublishers.ofString(formBody.toString(), StandardCharsets.UTF_8));
+                    } else {
+                        String jsonBody = mapper.writeValueAsString(jsonPayloadMap);
+                        RH_LOGGER.trace("JSON Request Body added to request: {}", jsonBody);
+                        requestBuilder.header("Content-Type", "application/json")
+                                      .header("Accept", "application/json")
+                                      .POST(HttpRequest.BodyPublishers.ofString(jsonBody, StandardCharsets.UTF_8));
+                    }
+                } catch (Exception e) {
+                    RH_LOGGER.error("Failed to serialize payload: {}", e.getMessage());
+                    requestBuilder.POST(HttpRequest.BodyPublishers.noBody());
                 }
             } else {
-                RH_LOGGER.trace("Binary Payload (no body) added to request");
+                RH_LOGGER.trace("POST request with no body");
                 requestBuilder.POST(HttpRequest.BodyPublishers.noBody());
             }
 
@@ -237,6 +300,12 @@ public class RestHelper {
                 String jsonString = response.body();
                 if (response.statusCode() >= 200 && response.statusCode() < 300) {
                     JsonNode jsonResponse = mapper.readTree(jsonString);
+                    // Check if response contains access_token and automatically save it
+                    if (jsonResponse.has("access_token")) {
+                        String token = jsonResponse.get("access_token").asText();
+                        saveAuthToken(cap.getBaseUrl(), token);
+                        RH_LOGGER.info("Saved JWT token securely for server for {} request: {}", cap.getMethod(), cap.getBaseUrl());
+                    }
                     return jsonResponse.toPrettyString();
                 } else {
                     return "Error: " + response.statusCode();
@@ -337,47 +406,53 @@ public class RestHelper {
         HttpClient client = createHttpClient(isLocal);
         if (cap.getMethod() == HttpMethod.POST) {
             // ============================================================
-            // Prepare POST request
+            // Prepare POST request (Query Parameters vs JSON Request Body vs Binary Body)
             // ============================================================
             final byte[][] binaryPayloadWrapper = new byte[1][];
+            Map<String, Object> jsonPayloadMap = new HashMap<>();
             StringBuilder queryParams = new StringBuilder("?");
 
             userInputs.forEach((key, value) -> {
-                // Check if this is our special binary buffer key
                 if ("Binary Request Body".equals(key)) {
-                    // Pull the actual byte[] from your data mapping using the selected key
                     String selectedBufferKey = value.toString();
                     binaryPayloadWrapper[0] = (byte[]) iq.getDataBuffer().get(selectedBufferKey);
                     RH_LOGGER.info("key = " + key + "\tSelected = " + selectedBufferKey);
-
                 } else {
-                    // Everything else is a Query Parameter for the URL
-                    if (queryParams.length() > 1) {
-                        queryParams.append("&");
+                    boolean isQueryParam = cap.getMetadata().has("parameters") &&
+                        StreamSupport.stream(cap.getMetadata().get("parameters").spliterator(), false)
+                            .anyMatch(p -> key.equals(p.path("name").asText()) && "query".equals(p.path("in").asText()));
+
+                    if (isQueryParam) {
+                        if (queryParams.length() > 1) {
+                            queryParams.append("&");
+                        }
+                        String encodedValue = URLEncoder.encode(value.toString(), StandardCharsets.UTF_8);
+                        queryParams.append(key).append("=").append(encodedValue);
+                    } else {
+                        jsonPayloadMap.put(key, value);
                     }
-                    // NOTE: use encoding to avoid issues with spaces (" " -> "%20")
-                    String encodedValue = URLEncoder.encode(value.toString(), StandardCharsets.UTF_8);
-                    queryParams.append(key).append("=").append(encodedValue);
                 }
             });
 
             byte[] binaryPayload = binaryPayloadWrapper[0];
-
-            // ============================================================
-            // Send POST request
-            // ============================================================
-            // Construct the URL with query parameters
-            String fullUrl = cap.getBaseUrl() + cap.getPath() + queryParams.toString();
+            String fullUrl = cap.getBaseUrl() + cap.getPath() + (queryParams.length() > 1 ? queryParams.toString() : "");
 
             HttpRequest.Builder requestBuilder = HttpRequest.newBuilder()
-                .uri(URI.create(fullUrl))
-                .header("Content-Type", "application/octet-stream");
+                .uri(URI.create(fullUrl));
+
+            if (cap.getApiKey() != null && !cap.getApiKey().trim().isEmpty()) {
+                requestBuilder.header("x-api-key", cap.getApiKey());
+            }
+
+            // Automatically attach Bearer token if available for this server
+            String jwtToken = getAuthToken(cap.getBaseUrl());
+            if (jwtToken != null && !jwtToken.trim().isEmpty()) {
+                requestBuilder.header("Authorization", "Bearer " + jwtToken);
+            }
 
             if (binaryPayload != null) {
-                // Limit to under 50 MB
                 if (binaryPayload.length > MAX_SIZE) {
                     RH_LOGGER.error("Payload too large: " + binaryPayload.length + " bytes. Capping at 50MB.");
-                    // Option 1: Stop the request and inform the user
                     showError(
                         owner,
                         "REST Capability Size Limit",
@@ -385,10 +460,41 @@ public class RestHelper {
                     return;
                 } else {
                     RH_LOGGER.trace("Binary Payload added to request with " + binaryPayload.length + " bytes");
-                    requestBuilder.POST(HttpRequest.BodyPublishers.ofByteArray(binaryPayload));
+                    requestBuilder.header("Content-Type", "application/octet-stream")
+                                  .POST(HttpRequest.BodyPublishers.ofByteArray(binaryPayload));
+                }
+            } else if (!jsonPayloadMap.isEmpty()) {
+                boolean isFormUrlEncoded = cap.getMetadata().path("requestBody")
+                    .path("content").has("application/x-www-form-urlencoded");
+
+                try {
+                    if (isFormUrlEncoded) {
+                        StringBuilder formBody = new StringBuilder();
+                        jsonPayloadMap.forEach((k, v) -> {
+                            if (formBody.length() > 0) {
+                                formBody.append("&");
+                            }
+                            formBody.append(URLEncoder.encode(k, StandardCharsets.UTF_8))
+                                    .append("=")
+                                    .append(URLEncoder.encode(String.valueOf(v), StandardCharsets.UTF_8));
+                        });
+                        RH_LOGGER.trace("Form-urlencoded Request Body added to request: {}", formBody);
+                        requestBuilder.header("Content-Type", "application/x-www-form-urlencoded")
+                                      .header("Accept", "application/json")
+                                      .POST(HttpRequest.BodyPublishers.ofString(formBody.toString(), StandardCharsets.UTF_8));
+                    } else {
+                        String jsonBody = mapper.writeValueAsString(jsonPayloadMap);
+                        RH_LOGGER.trace("JSON Request Body added to request: {}", jsonBody);
+                        requestBuilder.header("Content-Type", "application/json")
+                                      .header("Accept", "application/json")
+                                      .POST(HttpRequest.BodyPublishers.ofString(jsonBody, StandardCharsets.UTF_8));
+                    }
+                } catch (Exception e) {
+                    RH_LOGGER.error("Failed to serialize payload: {}", e.getMessage());
+                    requestBuilder.POST(HttpRequest.BodyPublishers.noBody());
                 }
             } else {
-                RH_LOGGER.trace("Binary Payload (no body) added to request");
+                RH_LOGGER.trace("POST request with no body");
                 requestBuilder.POST(HttpRequest.BodyPublishers.noBody());
             }
 
@@ -401,9 +507,14 @@ public class RestHelper {
                         int statusCode = response.statusCode();
                         if (statusCode >= 200 && statusCode < 300) {
 
-                            try {
-                                JsonNode jsonResponse = mapper.readTree(jsonString);
-                                RH_LOGGER.info("Success: Response = " + jsonResponse.toPrettyString());
+                             try {
+                                 JsonNode jsonResponse = mapper.readTree(jsonString);
+                                 if (jsonResponse.has("access_token")) {
+                                     String token = jsonResponse.get("access_token").asText();
+                                     saveAuthToken(cap.getBaseUrl(), token);
+                                     RH_LOGGER.info("Saved JWT token securely for server: {}", cap.getBaseUrl());
+                                 }
+                                 RH_LOGGER.info("Success: Response = " + jsonResponse.toPrettyString());
 
                                 // ============================================================
                                 // Prepare Information Dialog to show response
@@ -423,13 +534,23 @@ public class RestHelper {
                                 showError(owner, "Error processing JSON response", jpe.toString());
                             }
                         } else {
-                            showError(owner, "Server Error (" + statusCode + ")", response.body());
 
-                            if (statusCode == 422) {
-                                RH_LOGGER.error("Status Code (422) Details: " + response.body());
-                            } else if (statusCode == 400) {
-                                RH_LOGGER.error("Status Code (400) Details: " + response.body());
+                            String codeMessage =  "Server Error (" + statusCode + ")";
+                            switch (statusCode) {
+                                case 400 -> codeMessage = "Bad Request (400)";
+                                case 401 -> codeMessage = "Unauthorized (401)";
+                                case 402 -> codeMessage = "Payment Required (402)";
+                                case 403 -> codeMessage = "Forbidden (403)";
+                                case 404 -> codeMessage = "Not Found (404)";
+                                case 422 -> codeMessage = "Unprocessable Entity (422)";
+                                case 429 -> codeMessage = "Too Many Requests (429)";
+                                case 500 -> codeMessage = "Internal Server Error (500)";
+                                default -> {
+                                }
                             }
+
+                            RH_LOGGER.error(codeMessage + ": " + response.body());
+                            showError(owner, codeMessage, response.body());
                         }
                     });
                 })
