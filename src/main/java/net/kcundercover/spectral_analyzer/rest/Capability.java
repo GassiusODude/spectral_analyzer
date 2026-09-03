@@ -99,8 +99,8 @@ public class Capability {
     }
     private JsonNode resolveOpenApiProperties(JsonNode operation, JsonNode root) {
         ObjectNode flattenedParams = MAPPER.createObjectNode();
-
-        // 1. Handle Request Body (JSON or Octet-Stream)
+        CAP_LOGGER.info("Processing OpenAPI 3.0 operation: {}", operation.toPrettyString());
+        // Handle Request Body (JSON or Octet-Stream)
         // This is where most of your FastAPI payload definitions will be
         JsonNode requestBodyNode = operation.path("requestBody");
         if (!requestBodyNode.isMissingNode()) {
@@ -117,6 +117,7 @@ public class Capability {
             JsonNode binarySchemaNode = requestBodyNode.at("/content/application~1octet-stream/schema");
             if (!binarySchemaNode.isMissingNode()) {
                 ObjectNode binaryParam = MAPPER.createObjectNode();
+                binaryParam.put("type", "buffer");
                 binaryParam.put("description", "Byte Array");
                 flattenedParams.set("Binary Request Body", binaryParam);
                 CAP_LOGGER.info("Detected OpenAPI 3.0 Binary Request Body");
@@ -167,7 +168,7 @@ public class Capability {
 
 private JsonNode resolveSwaggerProperties(JsonNode operation, JsonNode root) {
     ObjectNode flattenedParams = MAPPER.createObjectNode();
-
+    CAP_LOGGER.info("Processing Swagger 2.0 operation: {}", operation.toPrettyString());
     // 1. Check for consumes (Binary Request Body)
     boolean isBinary = false;
     if (operation.has("consumes")) {

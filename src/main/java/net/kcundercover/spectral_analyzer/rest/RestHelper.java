@@ -1,6 +1,11 @@
 package net.kcundercover.spectral_analyzer.rest;
 
 import java.io.IOException;
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.TrustManager;
+import javax.net.ssl.X509TrustManager;
+import java.security.SecureRandom;
+import java.security.cert.X509Certificate;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
@@ -49,9 +54,37 @@ public class RestHelper {
     /** Store of capabilities mapped by URL path */
     Map<String, Capability> capabilities = new HashMap<>();
 
-    /** Default constructor */
-    public RestHelper() {
+    /**
+     * Create HttpClient with optional trust-all SSL context for local development.
+     * @param allowInsecure whether to trust all certificates (for local self-signed HTTPS)
+     * @return Configured HttpClient
+     */
+    private HttpClient createHttpClient(boolean allowInsecure) {
+        HttpClient.Builder builder = HttpClient.newBuilder()
+            .version(HttpClient.Version.HTTP_1_1)
+            .followRedirects(HttpClient.Redirect.NORMAL);
 
+        if (allowInsecure) {
+            try {
+                TrustManager[] trustAllCerts = new TrustManager[]{
+                    new X509TrustManager() {
+                        public X509Certificate[] getAcceptedIssuers() {
+                            return new X509Certificate[0];
+                        }
+                        public void checkClientTrusted(X509Certificate[] certs, String authType) {}
+                        public void checkServerTrusted(X509Certificate[] certs, String authType) {}
+                    }
+                };
+
+                SSLContext sslContext = SSLContext.getInstance("TLS");
+                sslContext.init(null, trustAllCerts, new SecureRandom());
+                builder.sslContext(sslContext);
+            } catch (Exception e) {
+                RH_LOGGER.warn("Failed to initialize insecure SSL context, falling back to default: {}", e.getMessage());
+            }
+        }
+
+        return builder.build();
     }
 
     /**
@@ -89,15 +122,16 @@ public class RestHelper {
     public void discover(String schemaUrl, String apiKey) {
         ObjectMapper mapper = new ObjectMapper();
         try {
-            HttpClient client = HttpClient.newHttpClient();
+            boolean isLocal = schemaUrl.contains("localhost") || schemaUrl.contains("127.0.0.1");
+            HttpClient client = createHttpClient(isLocal);
 
-            // NOTE: support x-api-key
-            HttpRequest request = HttpRequest.newBuilder()
+            HttpRequest.Builder requestBuilder = HttpRequest.newBuilder()
                 .uri(URI.create(schemaUrl))
-                .header("x-api-key", apiKey) // Pass the secret to FastAPI
-                .header("Accept", "application/json")
-                .GET()
-                .build();
+                .header("Accept", "application/json");
+            if (apiKey != null && !apiKey.trim().isEmpty()) {
+                requestBuilder.header("x-api-key", apiKey);
+            }
+            HttpRequest request = requestBuilder.GET().build();
 
             // send request
             HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
@@ -142,10 +176,8 @@ public class RestHelper {
 
         ObjectMapper mapper = new ObjectMapper();
 
-        HttpClient client = HttpClient.newBuilder()
-            .version(HttpClient.Version.HTTP_1_1)
-            .followRedirects(HttpClient.Redirect.NORMAL)
-            .build();
+        boolean isLocal = cap.getBaseUrl().contains("localhost") || cap.getBaseUrl().contains("127.0.0.1");
+        HttpClient client = createHttpClient(isLocal);
 
         if (cap.getMethod() == HttpMethod.POST) {
             // ============================================================
@@ -199,11 +231,7 @@ public class RestHelper {
                 requestBuilder.POST(HttpRequest.BodyPublishers.noBody());
             }
 
-            HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(fullUrl))
-                .header("Content-Type", "application/octet-stream")
-                .POST(HttpRequest.BodyPublishers.ofByteArray(binaryPayload))
-                .build();
+            HttpRequest request = requestBuilder.build();
             try {
                 HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
                 String jsonString = response.body();
@@ -257,13 +285,13 @@ public class RestHelper {
                 // ============================================================
                 // Set up request
                 // ============================================================
-                client = HttpClient.newHttpClient();
-                HttpRequest request = HttpRequest.newBuilder()
+                HttpRequest.Builder reqBuilder = HttpRequest.newBuilder()
                     .uri(URI.create(cap.getBaseUrl() + cap.getPath() + queryString.toString()))
-                    .header("x-api-key", cap.getApiKey()) // Pass the secret to FastAPI
-                    .header("Accept", "application/json")
-                    .GET() // Changed from .POST(...)
-                    .build();
+                    .header("Accept", "application/json");
+                if (cap.getApiKey() != null && !cap.getApiKey().trim().isEmpty()) {
+                    reqBuilder.header("x-api-key", cap.getApiKey());
+                }
+                HttpRequest request = reqBuilder.GET().build();
 
                 // ============================================================
                 // Send request and get response
@@ -305,12 +333,8 @@ public class RestHelper {
 
         ObjectMapper mapper = new ObjectMapper();
 
-        // Initialize Client and Build Request
-        // HttpClient client = HttpClient.newHttpClient();
-        HttpClient client = HttpClient.newBuilder()
-            .version(HttpClient.Version.HTTP_1_1) // <--- ADD THIS LINE
-            .followRedirects(HttpClient.Redirect.NORMAL)
-            .build();
+        boolean isLocal = cap.getBaseUrl().contains("localhost") || cap.getBaseUrl().contains("127.0.0.1");
+        HttpClient client = createHttpClient(isLocal);
         if (cap.getMethod() == HttpMethod.POST) {
             // ============================================================
             // Prepare POST request
@@ -368,11 +392,7 @@ public class RestHelper {
                 requestBuilder.POST(HttpRequest.BodyPublishers.noBody());
             }
 
-            HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(fullUrl))
-                .header("Content-Type", "application/octet-stream")
-                .POST(HttpRequest.BodyPublishers.ofByteArray(binaryPayload))
-                .build();
+            HttpRequest request = requestBuilder.build();
 
             client.sendAsync(request, HttpResponse.BodyHandlers.ofString())
                 .thenAccept(response -> {
@@ -436,13 +456,13 @@ public class RestHelper {
                 // ============================================================
                 // Set up request
                 // ============================================================
-                client = HttpClient.newHttpClient();
-                HttpRequest request = HttpRequest.newBuilder()
+                HttpRequest.Builder reqBuilder = HttpRequest.newBuilder()
                     .uri(URI.create(cap.getBaseUrl() + cap.getPath() + queryString.toString()))
-                    .header("x-api-key", cap.getApiKey()) // Pass the secret to FastAPI
-                    .header("Accept", "application/json")
-                    .GET() // Changed from .POST(...)
-                    .build();
+                    .header("Accept", "application/json");
+                if (cap.getApiKey() != null && !cap.getApiKey().trim().isEmpty()) {
+                    reqBuilder.header("x-api-key", cap.getApiKey());
+                }
+                HttpRequest request = reqBuilder.GET().build();
 
                 // ============================================================
                 // Send request and get response
