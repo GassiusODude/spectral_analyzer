@@ -43,6 +43,7 @@
           <Menu text="Capabilities">
             <items>
               <MenuItem text="Connect to REST Server..." onAction="#handleConnect" />
+              <MenuItem text="Manage Saved Servers..." onAction="#handleManageServers" />
               <MenuItem text="Run Capability" onAction="#showChooseCapability" />
             </items>
           </Menu>

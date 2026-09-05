@@ -12,6 +12,7 @@ import javafx.scene.control.Dialog;
 import javafx.scene.control.Label;
 import javafx.scene.control.Spinner;
 import javafx.scene.control.SpinnerValueFactory;
+import javafx.scene.control.PasswordField;
 import javafx.scene.control.TextField;
 import javafx.scene.control.TextFormatter;
 import javafx.scene.layout.GridPane;
@@ -84,7 +85,9 @@ public class CapabilityConfig {
         } else {
             strValue = value.toString();
         }
-        if (control instanceof TextField tf) {
+        if (control instanceof PasswordField pf) {
+            pf.setText(strValue);
+        } else if (control instanceof TextField tf) {
             tf.setText(strValue);
         } else if (control instanceof Spinner spinner) {
             // We use a helper to set the value safely
@@ -167,6 +170,9 @@ public class CapabilityConfig {
 
             } else if ("boolean".equals(type)) {
                 inputControl = new CheckBox();
+            } else if ("password".equals(propertyDetails.path("format").asText()) || "password".equals(propertyName.toLowerCase())) {
+                inputControl = new PasswordField();
+                ((PasswordField) inputControl).setPromptText(type);
             } else {
                 inputControl = new TextField();
                 ((TextField)inputControl).setPromptText(type);
@@ -254,7 +260,9 @@ public class CapabilityConfig {
                     String select = capConfig.iqDataField.getText();
                     CC_LOGGER.info("For " + name + " selection = " + select);
                     String schemaType = cap.getSchema().path("properties").path(name).path("type").asText();
-                    if (control instanceof TextField) {
+                    if (control instanceof PasswordField) {
+                        results.put(name, ((PasswordField) control).getText());
+                    } else if (control instanceof TextField) {
                         results.put(name, ((TextField) control).getText());
                     } else if (control instanceof ComboBox) {
                         results.put(name, ((ComboBox<?>) control).getValue());

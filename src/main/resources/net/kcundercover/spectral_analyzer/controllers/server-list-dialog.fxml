@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.scene.control.Button?>
+<?import javafx.scene.control.ButtonBar?>
+<?import javafx.scene.control.CheckBox?>
+<?import javafx.scene.control.Label?>
+<?import javafx.scene.control.ListView?>
+<?import javafx.scene.layout.BorderPane?>
+<?import javafx.scene.layout.HBox?>
+<?import javafx.scene.layout.VBox?>
+
+<BorderPane xmlns="http://javafx.com/javafx/21" xmlns:fx="http://javafx.com/fxml/1" fx:controller="net.kcundercover.spectral_analyzer.controllers.ServerListDialogController" prefWidth="450" prefHeight="400">
+    <top>
+        <VBox spacing="10" style="-fx-padding: 10;">
+            <Label text="Managed REST Servers (AppData):" style="-fx-font-weight: bold;"/>
+            <HBox spacing="10">
+                <Button text="Select All" onAction="#handleSelectAll" />
+                <Button text="Deselect All" onAction="#handleDeselectAll" />
+                <Button text="Remove Selected" onAction="#handleRemoveSelected" style="-fx-text-fill: red;" />
+            </HBox>
+        </VBox>
+    </top>
+    <center>
+        <VBox spacing="5" style="-fx-padding: 10;">
+            <ListView fx:id="serverListView" VBox.vgrow="ALWAYS" />
+        </VBox>
+    </center>
+    <bottom>
+        <ButtonBar style="-fx-padding: 10;">
+            <buttons>
+                <Button text="Connect Selected" onAction="#handleConnect" ButtonBar.buttonData="OK_DONE"/>
+                <Button text="Cancel" onAction="#handleCancel" ButtonBar.buttonData="CANCEL_CLOSE"/>
+            </buttons>
+        </ButtonBar>
+    </bottom>
+</BorderPane>

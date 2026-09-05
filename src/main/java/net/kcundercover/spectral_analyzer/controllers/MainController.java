@@ -1504,8 +1504,8 @@ public class MainController {
                 MC_LOGGER.info("Attempting secure connection to: " + url);
 
                 // Pass BOTH the URL and the Key to REST helper
-                // You will need to update restHelper.discover() to accept the second parameter
                 restHelper.discover(url, apiKey);
+                RestHelper.saveServerUrl(url);
 
             } catch (IllegalArgumentException iae) {
                 showErrorAlert(owner, "Connection Denied", iae.getMessage());
@@ -1516,9 +1516,84 @@ public class MainController {
     }
 
     /**
-     * Show dialog box for user to select the capability from a choice
-     * @param event ActionEvent that trigger this (MenuItem)
+     * Show dialog to manage and connect to saved non-local REST servers.
+     * @param event ActionEvent triggered from menu
      */
+    @FXML
+    private void handleManageServers(ActionEvent event) {
+        Window owner = ((javafx.scene.control.MenuItem) event.getSource())
+                        .getParentPopup().getOwnerWindow();
+        try {
+            FXMLLoader loader = new FXMLLoader(getClass().getResource(
+                "/net/kcundercover/spectral_analyzer/controllers/server-list-dialog.fxml"));
+            Parent root = loader.load();
+
+            ServerListDialogController controller = loader.getController();
+
+            Stage stage = new Stage();
+            stage.initModality(Modality.WINDOW_MODAL);
+            stage.initOwner(owner);
+            stage.setTitle("Manage Saved Servers");
+            stage.setScene(new Scene(root));
+            stage.showAndWait();
+
+            List<String> selectedServers = controller.getConnectedServers();
+            if (!selectedServers.isEmpty()) {
+                javafx.scene.control.Dialog<Void> progressDialog = new javafx.scene.control.Dialog<>();
+                progressDialog.initOwner(owner);
+                progressDialog.setTitle("Connecting to Servers");
+                progressDialog.setHeaderText("Connecting to selected services (handling cold starts)...");
+
+                javafx.scene.control.ProgressBar progressBar = new javafx.scene.control.ProgressBar(0);
+                progressBar.setPrefWidth(300);
+                javafx.scene.control.Label statusLabel = new Label("Initializing...");
+
+                VBox vbox = new VBox(10, statusLabel, progressBar);
+                vbox.setPadding(new Insets(15));
+                progressDialog.getDialogPane().setContent(vbox);
+                progressDialog.getDialogPane().getButtonTypes().add(javafx.scene.control.ButtonType.CANCEL);
+
+                javafx.concurrent.Task<Void> connectTask = new javafx.concurrent.Task<>() {
+                    @Override
+                    protected Void call() throws Exception {
+                        int total = selectedServers.size();
+                        int current = 0;
+                        for (String url : selectedServers) {
+                            if (isCancelled()) {
+                                break;
+                            }
+                            current++;
+                            updateMessage("Connecting to: " + url + " (" + current + "/" + total + ")");
+                            updateProgress(current - 1, total);
+                            MC_LOGGER.info("Connecting to selected server: {}", url);
+                            restHelper.discover(url, "");
+                            updateProgress(current, total);
+                        }
+                        return null;
+                    }
+                };
+
+                statusLabel.textProperty().bind(connectTask.messageProperty());
+                progressBar.progressProperty().bind(connectTask.progressProperty());
+
+                connectTask.setOnSucceeded(e -> progressDialog.close());
+                connectTask.setOnFailed(e -> progressDialog.close());
+                connectTask.setOnCancelled(e -> progressDialog.close());
+
+                progressDialog.getDialogPane().lookupButton(javafx.scene.control.ButtonType.CANCEL)
+                    .addEventFilter(ActionEvent.ACTION, ae -> {
+                        connectTask.cancel();
+                        progressDialog.close();
+                    });
+
+                new Thread(connectTask).start();
+                progressDialog.showAndWait();
+            }
+        } catch (IOException e) {
+            MC_LOGGER.error("Failed to load server list dialog: {}", e.getMessage());
+            showErrorAlert(owner, "Dialog Error", "Could not open server list dialog: " + e.getMessage());
+        }
+    }
     @FXML
     private void showChooseCapability(ActionEvent event) {
         Window owner = ((javafx.scene.control.MenuItem) event.getSource())

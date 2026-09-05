@@ -13,6 +13,8 @@ import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -32,6 +34,7 @@ import javafx.scene.control.Label;
 import javafx.scene.control.Spinner;
 import javafx.scene.control.SpinnerValueFactory;
 import javafx.scene.control.TextArea;
+import javafx.scene.control.PasswordField;
 import javafx.scene.control.TextField;
 import javafx.scene.control.TextFormatter;
 import javafx.scene.layout.GridPane;
@@ -57,10 +60,60 @@ public class RestHelper {
     Map<String, Capability> capabilities = new HashMap<>();
 
     /**
-     * Save JWT token securely to user preferences (Java Preferences API / AppData node)
-     * @param serverKey unique identifier for the server (e.g. baseUrl)
-     * @param token JWT token string
+     * Save previously connected server schema URL to user preferences (AppData).
+     * Only stores non-local addresses.
+     * @param schemaUrl The schema URL (e.g. https://my-server.onrender.com/openapi.json)
      */
+    public static void saveServerUrl(String schemaUrl) {
+        if (schemaUrl == null) {
+            return;
+        }
+        String lower = schemaUrl.toLowerCase();
+        // Only store non-local addresses
+        if (!lower.contains("localhost") && !lower.contains("127.0.0.1")) {
+            Preferences prefs = Preferences.userNodeForPackage(RestHelper.class);
+            String existing = prefs.get("STORED_SERVERS", "");
+            List<String> servers = new ArrayList<>(Arrays.asList(existing.split(",")));
+            servers.removeIf(String::isEmpty);
+            if (!servers.contains(schemaUrl)) {
+                servers.add(schemaUrl);
+                prefs.put("STORED_SERVERS", String.join(",", servers));
+                RH_LOGGER.info("Saved non-local server URL to AppData: {}", schemaUrl);
+            }
+        }
+    }
+
+    /**
+     * Retrieve list of previously connected non-local server schema URLs from AppData.
+     * @return List of schema URLs
+     */
+    public static List<String> getSavedServers() {
+        Preferences prefs = Preferences.userNodeForPackage(RestHelper.class);
+        String existing = prefs.get("STORED_SERVERS", "");
+        if (existing.isEmpty()) {
+            return new ArrayList<>();
+        }
+        List<String> servers = new ArrayList<>(Arrays.asList(existing.split(",")));
+        servers.removeIf(String::isEmpty);
+        return servers;
+    }
+    /**
+     * Remove a server schema URL from AppData user preferences.
+     * @param schemaUrl The schema URL to remove
+     */
+    public static void removeServerUrl(String schemaUrl) {
+        if (schemaUrl == null) {
+            return;
+        }
+        Preferences prefs = Preferences.userNodeForPackage(RestHelper.class);
+        String existing = prefs.get("STORED_SERVERS", "");
+        List<String> servers = new ArrayList<>(Arrays.asList(existing.split(",")));
+        servers.removeIf(String::isEmpty);
+        if (servers.remove(schemaUrl)) {
+            prefs.put("STORED_SERVERS", String.join(",", servers));
+            RH_LOGGER.info("Removed server URL from AppData: {}", schemaUrl);
+        }
+    }
     public static void saveAuthToken(String serverKey, String token) {
         Preferences prefs = Preferences.userNodeForPackage(RestHelper.class);
         if (token != null && !token.trim().isEmpty()) {
@@ -678,7 +731,9 @@ public class RestHelper {
         } else {
             strValue = value.toString();
         }
-        if (control instanceof TextField tf) {
+        if (control instanceof PasswordField pf) {
+            pf.setText(strValue);
+        } else if (control instanceof TextField tf) {
             tf.setText(strValue);
         } else if (control instanceof Spinner spinner) {
             // We use a helper to set the value safely
@@ -761,6 +816,9 @@ public class RestHelper {
 
             } else if ("boolean".equals(type)) {
                 inputControl = new CheckBox();
+            } else if ("password".equals(propertyDetails.path("format").asText()) || "password".equals(propertyName.toLowerCase())) {
+                inputControl = new PasswordField();
+                ((PasswordField) inputControl).setPromptText(type);
             } else {
                 inputControl = new TextField();
                 ((TextField)inputControl).setPromptText(type);
@@ -864,7 +922,9 @@ public class RestHelper {
                     String select = capConfig.iqDataField.getText();
                     RH_LOGGER.info("For " + name + " selection = " + select);
                     String schemaType = cap.getSchema().path("properties").path(name).path("type").asText();
-                    if (control instanceof TextField) {
+                    if (control instanceof PasswordField) {
+                        results.put(name, ((PasswordField) control).getText());
+                    } else if (control instanceof TextField) {
                         results.put(name, ((TextField) control).getText());
                     } else if (control instanceof ComboBox) {
                         results.put(name, ((ComboBox<?>) control).getValue());

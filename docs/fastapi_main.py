@@ -65,7 +65,20 @@ class BaudResult(BaseModel):
     confidence: float
     is_reliable: bool
 
-@app.post("/estimate_baud_fsk", response_model=BaudResult)
+@app.post(
+    "/estimate_baud_fsk", response_model=BaudResult,
+    openapi_extra={
+        "requestBody": {
+            "content": {
+                "application/octet-stream": {
+                    "schema": {
+                        "type": "string",
+                        "format": "binary"
+                    }
+                }
+            }
+        }
+    })
 async def estimate_baud_fsk(
     request: Request,
     dtype: IQDType,                   # Strictly enforced Enum
@@ -92,7 +105,20 @@ async def estimate_baud_fsk(
     }
 
 
-@app.post("/estimate_baud_psk", response_model=BaudResult)
+@app.post(
+    "/estimate_baud_psk", response_model=BaudResult,
+    openapi_extra={
+        "requestBody": {
+            "content": {
+                "application/octet-stream": {
+                    "schema": {
+                        "type": "string",
+                        "format": "binary"
+                    }
+                }
+            }
+        }
+    })
 async def estimate_baud_psk(
     request: Request,
     dtype: IQDType,                   # Strictly enforced Enum
