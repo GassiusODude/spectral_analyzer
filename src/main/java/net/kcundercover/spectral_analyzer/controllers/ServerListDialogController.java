@@ -1,6 +1,7 @@
 package net.kcundercover.spectral_analyzer.controllers;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 import javafx.collections.FXCollections;
@@ -105,7 +106,9 @@ public class ServerListDialogController {
     }
 
     public List<String> getConnectedServers() {
-        return connectedServers;
+        // return connectedServers;
+        return Collections.unmodifiableList(this.connectedServers);
+
     }
 }
 

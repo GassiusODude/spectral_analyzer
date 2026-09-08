@@ -28,6 +28,8 @@ import javafx.scene.control.ButtonBar;
 import javafx.scene.control.ButtonType;
 import javafx.scene.control.CheckBox;
 import javafx.scene.control.ComboBox;
+import javafx.scene.control.Hyperlink;
+import javafx.scene.layout.VBox;
 import javafx.scene.control.Control;
 import javafx.scene.control.Dialog;
 import javafx.scene.control.Label;
@@ -115,13 +117,21 @@ public class RestHelper {
         }
     }
     public static void saveAuthToken(String serverKey, String token) {
-        Preferences prefs = Preferences.userNodeForPackage(RestHelper.class);
-        if (token != null && !token.trim().isEmpty()) {
-            prefs.put("JWT_TOKEN_" + serverKey.hashCode(), token);
-            RH_LOGGER.info("Saved JWT token securely for server: {}", serverKey);
-        } else {
-            prefs.remove("JWT_TOKEN_" + serverKey.hashCode());
-            RH_LOGGER.info("Removed JWT token for server: {}", serverKey);
+        if (serverKey != null) {
+            String lower = serverKey.toLowerCase();
+            if (lower.contains("localhost") || lower.contains("127.0.0.1")) {
+                RH_LOGGER.info("Skipping saving JWT token for local capability address: {}", serverKey);
+                return;
+            }
+
+            Preferences prefs = Preferences.userNodeForPackage(RestHelper.class);
+            if (token != null && !token.trim().isEmpty()) {
+                prefs.put("JWT_TOKEN_" + serverKey.hashCode(), token);
+                RH_LOGGER.info("Saved JWT token securely for server: {}", serverKey);
+            } else {
+                prefs.remove("JWT_TOKEN_" + serverKey.hashCode());
+                RH_LOGGER.info("Removed JWT token for server: {}", serverKey);
+            }
         }
     }
 
@@ -569,20 +579,60 @@ public class RestHelper {
                                  }
                                  RH_LOGGER.info("Success: Response = " + jsonResponse.toPrettyString());
 
-                                // ============================================================
-                                // Prepare Information Dialog to show response
-                                // ============================================================
-                                TextArea textArea = new TextArea(jsonResponse.toPrettyString());
-                                textArea.setEditable(false);
-                                textArea.setWrapText(true);
-                                textArea.setPrefHeight(300);
-                                textArea.setPrefWidth(500);
-                                Alert alert = new Alert(Alert.AlertType.INFORMATION);
-                                alert.initOwner(owner);
-                                alert.setTitle("REST POST Results");
-                                alert.setHeaderText("Server Response (Status: " + response.statusCode() + ")");
-                                alert.getDialogPane().setContent(textArea);
-                                alert.showAndWait();
+                                 // ============================================================
+                                 // Prepare Information Dialog to show response (Check for Stripe / Checkout URLs)
+                                 // ============================================================
+                                 String stripeUrl = null;
+                                 if (jsonResponse.has("checkout_url")) {
+                                     stripeUrl = jsonResponse.get("checkout_url").asText();
+                                 } else if (jsonResponse.has("url")) {
+                                     String val = jsonResponse.get("url").asText();
+                                     if (val.startsWith("http://") || val.startsWith("https://")) {
+                                         stripeUrl = val;
+                                     }
+                                 }
+
+                                 Alert alert = new Alert(Alert.AlertType.INFORMATION);
+                                 alert.initOwner(owner);
+                                 alert.setTitle("REST POST Results");
+                                 alert.setHeaderText("Server Response (Status: " + response.statusCode() + ")");
+
+                                 if (stripeUrl != null) {
+                                     final String targetUrl = stripeUrl;
+                                      VBox contentBox = new VBox(10);
+                                      Hyperlink link = new Hyperlink("Stripe Checkout");
+                                      link.setWrapText(true);
+                                      link.setOnAction(e -> {
+                                         try {
+                                             if (java.awt.Desktop.isDesktopSupported() && java.awt.Desktop.getDesktop().isSupported(java.awt.Desktop.Action.BROWSE)) {
+                                                 java.awt.Desktop.getDesktop().browse(new java.net.URI(targetUrl));
+                                             } else {
+                                                 Runtime.getRuntime().exec(new String[] {"rundll32", "url.dll,FileProtocolHandler", targetUrl});
+                                             }
+                                         } catch (Exception ex) {
+                                             RH_LOGGER.error("Failed to open browser: {}", ex.getMessage());
+                                         }
+                                     });
+                                     contentBox.getChildren().addAll(
+                                         new Label("Subscription / Payment Required. Click to open Stripe URL:"),
+                                         link
+                                     );
+                                     TextArea textArea = new TextArea(jsonResponse.toPrettyString());
+                                     textArea.setEditable(false);
+                                     textArea.setWrapText(true);
+                                     textArea.setPrefHeight(200);
+                                     textArea.setPrefWidth(500);
+                                     contentBox.getChildren().add(textArea);
+                                     alert.getDialogPane().setContent(contentBox);
+                                 } else {
+                                     TextArea textArea = new TextArea(jsonResponse.toPrettyString());
+                                     textArea.setEditable(false);
+                                     textArea.setWrapText(true);
+                                     textArea.setPrefHeight(300);
+                                     textArea.setPrefWidth(500);
+                                     alert.getDialogPane().setContent(textArea);
+                                 }
+                                 alert.showAndWait();
                             } catch (JsonProcessingException jpe) {
                                 showError(owner, "Error processing JSON response", jpe.toString());
                             }
