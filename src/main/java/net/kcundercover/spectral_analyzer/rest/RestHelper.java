@@ -644,16 +644,37 @@ public class RestHelper {
                             }
 
                             // Non-JSON or HTML/text response (e.g. text/html for /terms)
+                            String targetUrl = cap.getBaseUrl() + cap.getPath();
+                            VBox contentBox = new VBox(10);
+                            Hyperlink link = new Hyperlink("Open in Web Browser (" + targetUrl + ")");
+                            link.setWrapText(true);
+                            link.setOnAction(e -> {
+                                try {
+                                    if (java.awt.Desktop.isDesktopSupported() && java.awt.Desktop.getDesktop().isSupported(java.awt.Desktop.Action.BROWSE)) {
+                                        java.awt.Desktop.getDesktop().browse(new java.net.URI(targetUrl));
+                                    } else {
+                                        Runtime.getRuntime().exec(new String[] {"rundll32", "url.dll,FileProtocolHandler", targetUrl});
+                                    }
+                                } catch (Exception ex) {
+                                    RH_LOGGER.error("Failed to open browser: {}", ex.getMessage());
+                                }
+                            });
+                            contentBox.getChildren().addAll(
+                                new Label("HTML document received. Click to open in browser:"),
+                                link
+                            );
                             TextArea textArea = new TextArea(responseBody);
                             textArea.setEditable(false);
                             textArea.setWrapText(true);
-                            textArea.setPrefHeight(300);
+                            textArea.setPrefHeight(200);
                             textArea.setPrefWidth(500);
+                            contentBox.getChildren().add(textArea);
+
                             Alert alert = new Alert(Alert.AlertType.INFORMATION);
                             alert.initOwner(owner);
-                            alert.setTitle("REST Results");
+                            alert.setTitle("REST HTML Results");
                             alert.setHeaderText("Server Response (Status: " + response.statusCode() + ")");
-                            alert.getDialogPane().setContent(textArea);
+                            alert.getDialogPane().setContent(contentBox);
                             alert.showAndWait();
                         } else {
 
@@ -723,20 +744,52 @@ public class RestHelper {
                 }
 
                 String responseBody = response.body();
+                String contentType = response.headers().firstValue("content-type").orElse("");
+                boolean isHtml = contentType.contains("text/html") || responseBody.trim().toLowerCase().startsWith("<!doctype html") || responseBody.trim().toLowerCase().startsWith("<html");
 
                 // ============================================================
                 // Prepare Information Dialog to show response
                 // ============================================================
-                TextArea textArea = new TextArea(responseBody);
-                textArea.setEditable(false);
-                textArea.setWrapText(true);
-                textArea.setPrefHeight(300);
-                textArea.setPrefWidth(500);
                 Alert alert = new Alert(Alert.AlertType.INFORMATION);
                 alert.initOwner(owner);
-                alert.setTitle("Identification Result");
+                alert.setTitle("Server Response");
                 alert.setHeaderText("Server Response (Status: " + response.statusCode() + ")");
-                alert.getDialogPane().setContent(textArea);
+
+                if (isHtml) {
+                    String targetUrl = cap.getBaseUrl() + cap.getPath();
+                    VBox contentBox = new VBox(10);
+                    Hyperlink link = new Hyperlink("Open in Web Browser (" + targetUrl + ")");
+                    link.setWrapText(true);
+                    link.setOnAction(e -> {
+                        try {
+                            if (java.awt.Desktop.isDesktopSupported() && java.awt.Desktop.getDesktop().isSupported(java.awt.Desktop.Action.BROWSE)) {
+                                java.awt.Desktop.getDesktop().browse(new java.net.URI(targetUrl));
+                            } else {
+                                Runtime.getRuntime().exec(new String[] {"rundll32", "url.dll,FileProtocolHandler", targetUrl});
+                            }
+                        } catch (Exception ex) {
+                            RH_LOGGER.error("Failed to open browser: {}", ex.getMessage());
+                        }
+                    });
+                    contentBox.getChildren().addAll(
+                        new Label("HTML document received. Click to open in browser:"),
+                        link
+                    );
+                    TextArea textArea = new TextArea(responseBody);
+                    textArea.setEditable(false);
+                    textArea.setWrapText(true);
+                    textArea.setPrefHeight(200);
+                    textArea.setPrefWidth(500);
+                    contentBox.getChildren().add(textArea);
+                    alert.getDialogPane().setContent(contentBox);
+                } else {
+                    TextArea textArea = new TextArea(responseBody);
+                    textArea.setEditable(false);
+                    textArea.setWrapText(true);
+                    textArea.setPrefHeight(300);
+                    textArea.setPrefWidth(500);
+                    alert.getDialogPane().setContent(textArea);
+                }
                 alert.showAndWait();
 
             } catch (IOException ioe) {
@@ -1001,6 +1054,13 @@ public class RestHelper {
      */
     public void showCapabilityDialog(Window owner, Capability cap, IqData iq) {
         if (cap == null) {
+            return;
+        }
+
+        // If no parameters required, execute directly without showing dialog
+        if (cap.getSchema() == null || !cap.getSchema().fieldNames().hasNext()) {
+            RH_LOGGER.info("No parameters required for capability {}. Executing directly.", cap.getPath());
+            executeCapability(owner, cap, new HashMap<>(), iq);
             return;
         }
 

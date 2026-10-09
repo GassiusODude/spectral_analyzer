@@ -27,6 +27,7 @@ import javafx.stage.Window;
 
 
 import java.util.Map;
+import java.util.HashMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import javafx.beans.property.ReadOnlyObjectWrapper;
@@ -304,8 +305,18 @@ public class AnnotationController {
             "template", new double[2][10], sampleRate,
             sigmfHelper.getMetadata(),
             firstSelected.getAssociatedGroup().data);
-        CapabilityConfig cc = new CapabilityConfig(cap, iqDataTemplate);
-        Map<String, Object> configTemplate = cc.configureCapability(owner, iqDataTemplate);
+        Map<String, Object> configTemplate;
+        CapabilityConfig cc = null;
+        if (cap.getSchema() == null || !cap.getSchema().fieldNames().hasNext()) {
+            configTemplate = new HashMap<>();
+        } else {
+            cc = new CapabilityConfig(cap, iqDataTemplate);
+            configTemplate = cc.configureCapability(owner, iqDataTemplate);
+            if (configTemplate == null) {
+                return;
+            }
+        }
+        final CapabilityConfig finalCc = cc;
         Dialog<Void> progressDialog = new Dialog<>();
         progressDialog.initOwner(owner);
 
@@ -341,8 +352,10 @@ public class AnnotationController {
                                     "current", data, targetFs,
                                     sigmfHelper.getMetadata(), row.getAssociatedGroup().data);
 
-                                // Update config based on current iqData
-                                cc.updateConfig(configTemplate, iqData);
+                                 // Update config based on current iqData
+                                 if (finalCc != null) {
+                                     finalCc.updateConfig(configTemplate, iqData);
+                                 }
 
                                 String response = restHelper.executeCapability(cap, configTemplate, iqData);
 
