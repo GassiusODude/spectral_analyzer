@@ -253,6 +253,14 @@ private JsonNode resolveSwaggerProperties(JsonNode operation, JsonNode root) {
         return apiKey;
     }
 
+    public String getSummary() {
+        return metadata != null && metadata.has("summary") ? metadata.get("summary").asText() : null;
+    }
+
+    public String getDescription() {
+        return metadata != null && metadata.has("description") ? metadata.get("description").asText() : null;
+    }
+
     /**
      * Get method for the metadata
      * @return Return the metadata describing the capability (like parameters and output)

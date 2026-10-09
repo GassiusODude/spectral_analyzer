@@ -29,6 +29,8 @@ import javafx.scene.control.ButtonType;
 import javafx.scene.control.CheckBox;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.Hyperlink;
+import javafx.scene.control.ListCell;
+import javafx.scene.control.ListView;
 import javafx.scene.layout.VBox;
 import javafx.scene.control.Control;
 import javafx.scene.control.Dialog;
@@ -360,18 +362,26 @@ public class RestHelper {
             HttpRequest request = requestBuilder.build();
             try {
                 HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
-                String jsonString = response.body();
+                String responseBody = response.body();
+                String contentType = response.headers().firstValue("content-type").orElse("");
                 if (response.statusCode() >= 200 && response.statusCode() < 300) {
-                    JsonNode jsonResponse = mapper.readTree(jsonString);
-                    // Check if response contains access_token and automatically save it
-                    if (jsonResponse.has("access_token")) {
-                        String token = jsonResponse.get("access_token").asText();
-                        saveAuthToken(cap.getBaseUrl(), token);
-                        RH_LOGGER.info("Saved JWT token securely for server for {} request: {}", cap.getMethod(), cap.getBaseUrl());
+                    if (contentType.contains("application/json") || isJson(responseBody)) {
+                        try {
+                            JsonNode jsonResponse = mapper.readTree(responseBody);
+                            if (jsonResponse.has("access_token")) {
+                                String token = jsonResponse.get("access_token").asText();
+                                saveAuthToken(cap.getBaseUrl(), token);
+                                RH_LOGGER.info("Saved JWT token securely for server for {} request: {}", cap.getMethod(), cap.getBaseUrl());
+                            }
+                            return jsonResponse.toPrettyString();
+                        } catch (Exception e) {
+                            return responseBody;
+                        }
+                    } else {
+                        return responseBody;
                     }
-                    return jsonResponse.toPrettyString();
                 } else {
-                    return "Error: " + response.statusCode();
+                    return "Error: " + response.statusCode() + " - " + responseBody;
                 }
             } catch (Exception e) {
                 return "Failed: " + e.getMessage();
@@ -566,76 +576,85 @@ public class RestHelper {
             client.sendAsync(request, HttpResponse.BodyHandlers.ofString())
                 .thenAccept(response -> {
                     Platform.runLater(() -> {
-                        String jsonString = response.body();
+                        String responseBody = response.body();
+                        String contentType = response.headers().firstValue("content-type").orElse("");
                         int statusCode = response.statusCode();
                         if (statusCode >= 200 && statusCode < 300) {
+                            boolean isJsonContent = contentType.contains("application/json") || isJson(responseBody);
+                            if (isJsonContent) {
+                                try {
+                                    JsonNode jsonResponse = mapper.readTree(responseBody);
+                                    if (jsonResponse.has("access_token")) {
+                                        String token = jsonResponse.get("access_token").asText();
+                                        saveAuthToken(cap.getBaseUrl(), token);
+                                        RH_LOGGER.info("Saved JWT token securely for server: {}", cap.getBaseUrl());
+                                    }
+                                    RH_LOGGER.info("Success: Response = " + jsonResponse.toPrettyString());
 
-                             try {
-                                 JsonNode jsonResponse = mapper.readTree(jsonString);
-                                 if (jsonResponse.has("access_token")) {
-                                     String token = jsonResponse.get("access_token").asText();
-                                     saveAuthToken(cap.getBaseUrl(), token);
-                                     RH_LOGGER.info("Saved JWT token securely for server: {}", cap.getBaseUrl());
-                                 }
-                                 RH_LOGGER.info("Success: Response = " + jsonResponse.toPrettyString());
+                                    // ============================================================
+                                    // Prepare Information Dialog to show response (Check for Web Links)
+                                    // ============================================================
+                                    String stripeUrl = extractWebLink(jsonResponse);
 
-                                 // ============================================================
-                                 // Prepare Information Dialog to show response (Check for Stripe / Checkout URLs)
-                                 // ============================================================
-                                 String stripeUrl = null;
-                                 if (jsonResponse.has("checkout_url")) {
-                                     stripeUrl = jsonResponse.get("checkout_url").asText();
-                                 } else if (jsonResponse.has("url")) {
-                                     String val = jsonResponse.get("url").asText();
-                                     if (val.startsWith("http://") || val.startsWith("https://")) {
-                                         stripeUrl = val;
-                                     }
-                                 }
+                                    Alert alert = new Alert(Alert.AlertType.INFORMATION);
+                                    alert.initOwner(owner);
+                                    alert.setTitle("REST POST Results");
+                                    alert.setHeaderText("Server Response (Status: " + response.statusCode() + ")");
 
-                                 Alert alert = new Alert(Alert.AlertType.INFORMATION);
-                                 alert.initOwner(owner);
-                                 alert.setTitle("REST POST Results");
-                                 alert.setHeaderText("Server Response (Status: " + response.statusCode() + ")");
-
-                                 if (stripeUrl != null) {
-                                     final String targetUrl = stripeUrl;
-                                      VBox contentBox = new VBox(10);
-                                      Hyperlink link = new Hyperlink("Stripe Checkout");
-                                      link.setWrapText(true);
-                                      link.setOnAction(e -> {
-                                         try {
-                                             if (java.awt.Desktop.isDesktopSupported() && java.awt.Desktop.getDesktop().isSupported(java.awt.Desktop.Action.BROWSE)) {
-                                                 java.awt.Desktop.getDesktop().browse(new java.net.URI(targetUrl));
-                                             } else {
-                                                 Runtime.getRuntime().exec(new String[] {"rundll32", "url.dll,FileProtocolHandler", targetUrl});
-                                             }
-                                         } catch (Exception ex) {
-                                             RH_LOGGER.error("Failed to open browser: {}", ex.getMessage());
-                                         }
-                                     });
-                                     contentBox.getChildren().addAll(
-                                         new Label("Subscription / Payment Required. Click to open Stripe URL:"),
-                                         link
-                                     );
-                                     TextArea textArea = new TextArea(jsonResponse.toPrettyString());
-                                     textArea.setEditable(false);
-                                     textArea.setWrapText(true);
-                                     textArea.setPrefHeight(200);
-                                     textArea.setPrefWidth(500);
-                                     contentBox.getChildren().add(textArea);
-                                     alert.getDialogPane().setContent(contentBox);
-                                 } else {
-                                     TextArea textArea = new TextArea(jsonResponse.toPrettyString());
-                                     textArea.setEditable(false);
-                                     textArea.setWrapText(true);
-                                     textArea.setPrefHeight(300);
-                                     textArea.setPrefWidth(500);
-                                     alert.getDialogPane().setContent(textArea);
-                                 }
-                                 alert.showAndWait();
-                            } catch (JsonProcessingException jpe) {
-                                showError(owner, "Error processing JSON response", jpe.toString());
+                                    if (stripeUrl != null) {
+                                        final String targetUrl = stripeUrl;
+                                        VBox contentBox = new VBox(10);
+                                        Hyperlink link = new Hyperlink("Open Web Link");
+                                        link.setWrapText(true);
+                                        link.setOnAction(e -> {
+                                            try {
+                                                if (java.awt.Desktop.isDesktopSupported() && java.awt.Desktop.getDesktop().isSupported(java.awt.Desktop.Action.BROWSE)) {
+                                                    java.awt.Desktop.getDesktop().browse(new java.net.URI(targetUrl));
+                                                } else {
+                                                    Runtime.getRuntime().exec(new String[] {"rundll32", "url.dll,FileProtocolHandler", targetUrl});
+                                                }
+                                            } catch (Exception ex) {
+                                                RH_LOGGER.error("Failed to open browser: {}", ex.getMessage());
+                                            }
+                                        });
+                                        contentBox.getChildren().addAll(
+                                            new Label("Web link detected. Click to open URL:"),
+                                            link
+                                        );
+                                        TextArea textArea = new TextArea(jsonResponse.toPrettyString());
+                                        textArea.setEditable(false);
+                                        textArea.setWrapText(true);
+                                        textArea.setPrefHeight(200);
+                                        textArea.setPrefWidth(500);
+                                        contentBox.getChildren().add(textArea);
+                                        alert.getDialogPane().setContent(contentBox);
+                                    } else {
+                                        TextArea textArea = new TextArea(jsonResponse.toPrettyString());
+                                        textArea.setEditable(false);
+                                        textArea.setWrapText(true);
+                                        textArea.setPrefHeight(300);
+                                        textArea.setPrefWidth(500);
+                                        alert.getDialogPane().setContent(textArea);
+                                    }
+                                    alert.showAndWait();
+                                    return;
+                                } catch (Exception e) {
+                                    // Fallback to text area below if JSON parsing fails
+                                }
                             }
+
+                            // Non-JSON or HTML/text response (e.g. text/html for /terms)
+                            TextArea textArea = new TextArea(responseBody);
+                            textArea.setEditable(false);
+                            textArea.setWrapText(true);
+                            textArea.setPrefHeight(300);
+                            textArea.setPrefWidth(500);
+                            Alert alert = new Alert(Alert.AlertType.INFORMATION);
+                            alert.initOwner(owner);
+                            alert.setTitle("REST Results");
+                            alert.setHeaderText("Server Response (Status: " + response.statusCode() + ")");
+                            alert.getDialogPane().setContent(textArea);
+                            alert.showAndWait();
                         } else {
 
                             String codeMessage =  "Server Error (" + statusCode + ")";
@@ -727,6 +746,42 @@ public class RestHelper {
             }
         }
 
+    }
+
+    private boolean isJson(String text) {
+        if (text == null) {
+            return false;
+        }
+        String trimmed = text.trim();
+        return (trimmed.startsWith("{") && trimmed.endsWith("}")) || (trimmed.startsWith("[") && trimmed.endsWith("]"));
+    }
+
+    /**
+     * Check returned JSON for any field representing a web link / URL.
+     * @param jsonResponse JSON response node
+     * @return URL string or null
+     */
+    private String extractWebLink(JsonNode jsonResponse) {
+        if (jsonResponse == null || !jsonResponse.isObject()) {
+            return null;
+        }
+        String fallbackUrl = null;
+        for (var it = jsonResponse.fields(); it.hasNext(); ) {
+            var field = it.next();
+            String fieldName = field.getKey().toLowerCase();
+            if (field.getValue().isTextual()) {
+                String val = field.getValue().asText();
+                if (val.startsWith("http://") || val.startsWith("https://")) {
+                    if (fieldName.contains("url") || fieldName.contains("link") || fieldName.contains("uri") || fieldName.equals("checkout_url") || fieldName.equals("redirect_url")) {
+                        return val;
+                    }
+                    if (fallbackUrl == null) {
+                        fallbackUrl = val;
+                    }
+                }
+            }
+        }
+        return fallbackUrl;
     }
 
     /**
@@ -945,10 +1000,28 @@ public class RestHelper {
      * @param iq The iq data being applied towards
      */
     public void showCapabilityDialog(Window owner, Capability cap, IqData iq) {
+        if (cap == null) {
+            return;
+        }
+
         Dialog<Map<String, Object>> dialog = new Dialog<>();
         dialog.initOwner(owner);
         dialog.setTitle("Execute Capability");
-        dialog.setHeaderText("Enter required parameters:");
+
+        String header = "Enter required parameters:";
+        if (cap.getSummary() != null && !cap.getSummary().isEmpty()) {
+            header = cap.getSummary();
+        }
+        dialog.setHeaderText(header);
+
+        VBox contentBox = new VBox(10);
+        if (cap.getDescription() != null && !cap.getDescription().isEmpty()) {
+            Label descLabel = new Label(cap.getDescription());
+            descLabel.setWrapText(true);
+            descLabel.setMaxWidth(450);
+            descLabel.setStyle("-fx-font-style: italic; -fx-text-fill: #555555;");
+            contentBox.getChildren().add(descLabel);
+        }
 
         // ====================================================================
         // Setup the Grid and Buttons
@@ -962,7 +1035,8 @@ public class RestHelper {
 
         Map<String, CapabilityConfig2> inputFields = new HashMap<>();
         buildFormFromSchema(cap.getSchema(), grid, inputFields, iq);
-        dialog.getDialogPane().setContent(grid);
+        contentBox.getChildren().add(grid);
+        dialog.getDialogPane().setContent(contentBox);
 
         dialog.setResultConverter(dialogButton -> {
             if (dialogButton == okButtonType) {

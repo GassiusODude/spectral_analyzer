@@ -16,6 +16,7 @@ import javafx.scene.control.PasswordField;
 import javafx.scene.control.TextField;
 import javafx.scene.control.TextFormatter;
 import javafx.scene.layout.GridPane;
+import javafx.scene.layout.VBox;
 import javafx.stage.Window;
 import javafx.util.converter.DoubleStringConverter;
 
@@ -246,11 +247,26 @@ public class CapabilityConfig {
         Dialog<Map<String, Object>> dialog = new Dialog<>();
         dialog.initOwner(owner);
         dialog.setTitle("Execute Capability");
-        dialog.setHeaderText("Enter required parameters:");
+
+        String header = "Enter required parameters:";
+        if (cap.getSummary() != null && !cap.getSummary().isEmpty()) {
+            header = cap.getSummary();
+        }
+        dialog.setHeaderText(header);
+
+        VBox contentBox = new VBox(10);
+        if (cap.getDescription() != null && !cap.getDescription().isEmpty()) {
+            Label descLabel = new Label(cap.getDescription());
+            descLabel.setWrapText(true);
+            descLabel.setMaxWidth(450);
+            descLabel.setStyle("-fx-font-style: italic; -fx-text-fill: #555555;");
+            contentBox.getChildren().add(descLabel);
+        }
+        contentBox.getChildren().add(grid);
 
         ButtonType okButtonType = new ButtonType("OK", ButtonBar.ButtonData.OK_DONE);
         dialog.getDialogPane().getButtonTypes().addAll(okButtonType, ButtonType.CANCEL);
-        dialog.getDialogPane().setContent(grid);
+        dialog.getDialogPane().setContent(contentBox);
 
         dialog.setResultConverter(dialogButton -> {
             if (dialogButton == okButtonType) {
