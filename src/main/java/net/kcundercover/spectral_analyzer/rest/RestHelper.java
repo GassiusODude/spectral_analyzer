@@ -52,6 +52,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import net.kcundercover.spectral_analyzer.data.IqData;
+import net.kcundercover.spectral_analyzer.data.SecureAppStorage;
 import net.kcundercover.spectral_analyzer.rest.Capability;
 
 /**
@@ -59,6 +60,7 @@ import net.kcundercover.spectral_analyzer.rest.Capability;
  */
 public class RestHelper {
     private static final Logger RH_LOGGER = LoggerFactory.getLogger(RestHelper.class);
+    private static final Map<String, String> sessionTokenCache = new java.util.concurrent.ConcurrentHashMap<>();
     public static final long MAX_SIZE = 50 * 1024 * 1024; // 50 MB limit
     /** Store of capabilities mapped by URL path */
     Map<String, Capability> capabilities = new HashMap<>();
@@ -121,30 +123,41 @@ public class RestHelper {
     public static void saveAuthToken(String serverKey, String token) {
         if (serverKey != null) {
             String lower = serverKey.toLowerCase();
-            if (lower.contains("localhost") || lower.contains("127.0.0.1")) {
-                RH_LOGGER.info("Skipping saving JWT token for local capability address: {}", serverKey);
-                return;
-            }
+            boolean isLocal = lower.contains("localhost") || lower.contains("127.0.0.1");
 
-            Preferences prefs = Preferences.userNodeForPackage(RestHelper.class);
             if (token != null && !token.trim().isEmpty()) {
-                prefs.put("JWT_TOKEN_" + serverKey.hashCode(), token);
-                RH_LOGGER.info("Saved JWT token securely for server: {}", serverKey);
+                sessionTokenCache.put(serverKey, token);
+                if (isLocal) {
+                    RH_LOGGER.info("Cached JWT token in-memory for local capability address (not saving to AppData): {}", serverKey);
+                } else {
+                    SecureAppStorage.saveSecureAuthToken(serverKey, token);
+                    RH_LOGGER.info("Saved JWT token securely to AppData for server: {}", serverKey);
+                }
             } else {
-                prefs.remove("JWT_TOKEN_" + serverKey.hashCode());
-                RH_LOGGER.info("Removed JWT token for server: {}", serverKey);
+                sessionTokenCache.remove(serverKey);
+                if (isLocal) {
+                    RH_LOGGER.info("Removed in-memory JWT token for local capability address: {}", serverKey);
+                } else {
+                    SecureAppStorage.saveSecureAuthToken(serverKey, null);
+                    RH_LOGGER.info("Removed JWT token from AppData for server: {}", serverKey);
+                }
             }
         }
     }
 
     /**
-     * Retrieve stored JWT token for the specified server from user preferences.
+     * Retrieve stored JWT token for the specified server from session cache or secure AppData storage.
      * @param serverKey unique identifier for the server (e.g. baseUrl)
      * @return JWT token or null if not found
      */
     public static String getAuthToken(String serverKey) {
-        Preferences prefs = Preferences.userNodeForPackage(RestHelper.class);
-        return prefs.get("JWT_TOKEN_" + serverKey.hashCode(), null);
+        if (serverKey == null) {
+            return null;
+        }
+        if (sessionTokenCache.containsKey(serverKey)) {
+            return sessionTokenCache.get(serverKey);
+        }
+        return SecureAppStorage.loadSecureAuthToken(serverKey);
     }
     private HttpClient createHttpClient(boolean allowInsecure) {
         HttpClient.Builder builder = HttpClient.newBuilder()

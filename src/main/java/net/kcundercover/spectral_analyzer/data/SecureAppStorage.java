@@ -11,6 +11,10 @@ import java.nio.file.attribute.PosixFilePermission;
 import java.nio.file.attribute.PosixFilePermissions;
 import java.util.Base64;
 import java.util.Set;
+import java.util.Map;
+import java.util.HashMap;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.core.type.TypeReference;
 
 public class SecureAppStorage {
 
@@ -120,6 +124,75 @@ public class SecureAppStorage {
         } catch (Exception e) {
             System.err.println("Failed to read secure token: " + e.getMessage());
             return null;
+        }
+    }
+
+    /**
+     * Saves a token securely for a specific server key using DPAPI (Windows) or chmod 600 (Linux/Mac).
+     */
+    public static void saveSecureAuthToken(String serverKey, String token) {
+        try {
+            Path targetDir = Paths.get(getSystemAppDataPath());
+            if (!Files.exists(targetDir)) {
+                Files.createDirectories(targetDir);
+            }
+            Path tokenFile = targetDir.resolve("tokens.dat");
+            
+            Map<String, String> tokens = loadAllSecureAuthTokens();
+            if (token != null && !token.trim().isEmpty()) {
+                tokens.put(serverKey, token);
+            } else {
+                tokens.remove(serverKey);
+            }
+
+            ObjectMapper mapper = new ObjectMapper();
+            String json = mapper.writeValueAsString(tokens);
+
+            if (IS_WINDOWS) {
+                byte[] encBytes = Crypt32Util.cryptProtectData(json.getBytes(StandardCharsets.UTF_8));
+                Files.writeString(tokenFile, Base64.getEncoder().encodeToString(encBytes), StandardCharsets.UTF_8);
+            } else {
+                Files.writeString(tokenFile, json, StandardCharsets.UTF_8);
+                try {
+                    Set<PosixFilePermission> perms = PosixFilePermissions.fromString("rw-------");
+                    Files.setPosixFilePermissions(tokenFile, perms);
+                } catch (UnsupportedOperationException e) {
+                    // Ignored if non-POSIX
+                }
+            }
+        } catch (Exception e) {
+            System.err.println("Failed to save secure auth token: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Loads a token securely for a specific server key.
+     */
+    public static String loadSecureAuthToken(String serverKey) {
+        Map<String, String> tokens = loadAllSecureAuthTokens();
+        return tokens.get(serverKey);
+    }
+
+    private static Map<String, String> loadAllSecureAuthTokens() {
+        Path tokenFile = Paths.get(getSystemAppDataPath()).resolve("tokens.dat");
+        if (!Files.exists(tokenFile)) {
+            return new HashMap<>();
+        }
+        try {
+            String content = Files.readString(tokenFile, StandardCharsets.UTF_8).trim();
+            String json;
+            if (IS_WINDOWS) {
+                byte[] encryptedBytes = Base64.getDecoder().decode(content);
+                byte[] decryptedBytes = Crypt32Util.cryptUnprotectData(encryptedBytes);
+                json = new String(decryptedBytes, StandardCharsets.UTF_8);
+            } else {
+                json = content;
+            }
+            ObjectMapper mapper = new ObjectMapper();
+            return mapper.readValue(json, new TypeReference<Map<String, String>>() {});
+        } catch (Exception e) {
+            System.err.println("Failed to load secure auth tokens: " + e.getMessage());
+            return new HashMap<>();
         }
     }
 }
