@@ -29,8 +29,6 @@ import javafx.scene.control.ButtonType;
 import javafx.scene.control.CheckBox;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.Hyperlink;
-import javafx.scene.control.ListCell;
-import javafx.scene.control.ListView;
 import javafx.scene.layout.VBox;
 import javafx.scene.control.Control;
 import javafx.scene.control.Dialog;
@@ -60,7 +58,7 @@ import net.kcundercover.spectral_analyzer.rest.Capability;
  */
 public class RestHelper {
     private static final Logger RH_LOGGER = LoggerFactory.getLogger(RestHelper.class);
-    private static final Map<String, String> sessionTokenCache = new java.util.concurrent.ConcurrentHashMap<>();
+    private static final Map<String, String> SESSION_TOKEN_CACHE = new java.util.concurrent.ConcurrentHashMap<>();
     public static final long MAX_SIZE = 50 * 1024 * 1024; // 50 MB limit
     /** Store of capabilities mapped by URL path */
     Map<String, Capability> capabilities = new HashMap<>();
@@ -126,7 +124,7 @@ public class RestHelper {
             boolean isLocal = lower.contains("localhost") || lower.contains("127.0.0.1");
 
             if (token != null && !token.trim().isEmpty()) {
-                sessionTokenCache.put(serverKey, token);
+                SESSION_TOKEN_CACHE.put(serverKey, token);
                 if (isLocal) {
                     RH_LOGGER.info("Cached JWT token in-memory for local capability address (not saving to AppData): {}", serverKey);
                 } else {
@@ -134,7 +132,7 @@ public class RestHelper {
                     RH_LOGGER.info("Saved JWT token securely to AppData for server: {}", serverKey);
                 }
             } else {
-                sessionTokenCache.remove(serverKey);
+                SESSION_TOKEN_CACHE.remove(serverKey);
                 if (isLocal) {
                     RH_LOGGER.info("Removed in-memory JWT token for local capability address: {}", serverKey);
                 } else {
@@ -154,8 +152,8 @@ public class RestHelper {
         if (serverKey == null) {
             return null;
         }
-        if (sessionTokenCache.containsKey(serverKey)) {
-            return sessionTokenCache.get(serverKey);
+        if (SESSION_TOKEN_CACHE.containsKey(serverKey)) {
+            return SESSION_TOKEN_CACHE.get(serverKey);
         }
         return SecureAppStorage.loadSecureAuthToken(serverKey);
     }
@@ -379,17 +377,13 @@ public class RestHelper {
                 String contentType = response.headers().firstValue("content-type").orElse("");
                 if (response.statusCode() >= 200 && response.statusCode() < 300) {
                     if (contentType.contains("application/json") || isJson(responseBody)) {
-                        try {
-                            JsonNode jsonResponse = mapper.readTree(responseBody);
-                            if (jsonResponse.has("access_token")) {
-                                String token = jsonResponse.get("access_token").asText();
-                                saveAuthToken(cap.getBaseUrl(), token);
-                                RH_LOGGER.info("Saved JWT token securely for server for {} request: {}", cap.getMethod(), cap.getBaseUrl());
-                            }
-                            return jsonResponse.toPrettyString();
-                        } catch (Exception e) {
-                            return responseBody;
+                        JsonNode jsonResponse = mapper.readTree(responseBody);
+                        if (jsonResponse.has("access_token")) {
+                            String token = jsonResponse.get("access_token").asText();
+                            saveAuthToken(cap.getBaseUrl(), token);
+                            RH_LOGGER.info("Saved JWT token securely for server for {} request: {}", cap.getMethod(), cap.getBaseUrl());
                         }
+                        return jsonResponse.toPrettyString();
                     } else {
                         return responseBody;
                     }
@@ -607,18 +601,18 @@ public class RestHelper {
                                     // ============================================================
                                     // Prepare Information Dialog to show response (Check for Web Links)
                                     // ============================================================
-                                    String stripeUrl = extractWebLink(jsonResponse);
+                                     WebLinkInfo linkInfo = extractWebLinkInfo(jsonResponse);
 
-                                    Alert alert = new Alert(Alert.AlertType.INFORMATION);
-                                    alert.initOwner(owner);
-                                    alert.setTitle("REST POST Results");
-                                    alert.setHeaderText("Server Response (Status: " + response.statusCode() + ")");
+                                     Alert alert = new Alert(Alert.AlertType.INFORMATION);
+                                     alert.initOwner(owner);
+                                     alert.setTitle("REST POST Results");
+                                     alert.setHeaderText("Server Response (Status: " + response.statusCode() + ")");
 
-                                    if (stripeUrl != null) {
-                                        final String targetUrl = stripeUrl;
-                                        VBox contentBox = new VBox(10);
-                                        Hyperlink link = new Hyperlink("Open Web Link");
-                                        link.setWrapText(true);
+                                     if (linkInfo != null) {
+                                         final String targetUrl = linkInfo.url();
+                                         VBox contentBox = new VBox(10);
+                                         Hyperlink link = new Hyperlink("Open " + linkInfo.fieldName());
+                                         link.setWrapText(true);
                                         link.setOnAction(e -> {
                                             try {
                                                 if (java.awt.Desktop.isDesktopSupported() && java.awt.Desktop.getDesktop().isSupported(java.awt.Desktop.Action.BROWSE)) {
@@ -651,7 +645,7 @@ public class RestHelper {
                                     }
                                     alert.showAndWait();
                                     return;
-                                } catch (Exception e) {
+                                 } catch (JsonProcessingException e) {
                                     // Fallback to text area below if JSON parsing fails
                                 }
                             }
@@ -822,32 +816,40 @@ public class RestHelper {
         return (trimmed.startsWith("{") && trimmed.endsWith("}")) || (trimmed.startsWith("[") && trimmed.endsWith("]"));
     }
 
+    public record WebLinkInfo(String url, String fieldName) {}
+
     /**
      * Check returned JSON for any field representing a web link / URL.
      * @param jsonResponse JSON response node
-     * @return URL string or null
+     * @return WebLinkInfo containing URL and field name, or null
      */
-    private String extractWebLink(JsonNode jsonResponse) {
+    private WebLinkInfo extractWebLinkInfo(JsonNode jsonResponse) {
         if (jsonResponse == null || !jsonResponse.isObject()) {
             return null;
         }
         String fallbackUrl = null;
+        String fallbackField = "Web Link";
         for (var it = jsonResponse.fields(); it.hasNext(); ) {
             var field = it.next();
-            String fieldName = field.getKey().toLowerCase();
+            String rawKey = field.getKey();
+            String fieldName = rawKey.toLowerCase();
             if (field.getValue().isTextual()) {
                 String val = field.getValue().asText();
                 if (val.startsWith("http://") || val.startsWith("https://")) {
                     if (fieldName.contains("url") || fieldName.contains("link") || fieldName.contains("uri") || fieldName.equals("checkout_url") || fieldName.equals("redirect_url")) {
-                        return val;
+                        return new WebLinkInfo(val, rawKey);
                     }
                     if (fallbackUrl == null) {
                         fallbackUrl = val;
+                        fallbackField = rawKey;
                     }
                 }
             }
         }
-        return fallbackUrl;
+        if (fallbackUrl != null) {
+            return new WebLinkInfo(fallbackUrl, fallbackField);
+        }
+        return null;
     }
 
     /**
