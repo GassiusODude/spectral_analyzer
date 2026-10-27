@@ -60,6 +60,19 @@ public class RestHelper {
     private static final Logger RH_LOGGER = LoggerFactory.getLogger(RestHelper.class);
     private static final Map<String, String> SESSION_TOKEN_CACHE = new java.util.concurrent.ConcurrentHashMap<>();
     public static final long MAX_SIZE = 50 * 1024 * 1024; // 50 MB limit
+
+    static {
+        try {
+            Preferences prefs = Preferences.userNodeForPackage(RestHelper.class);
+            for (String key : prefs.keys()) {
+                if (key.startsWith("JWT_TOKEN_")) {
+                    prefs.remove(key);
+                }
+            }
+        } catch (Exception e) {
+            // Ignored
+        }
+    }
     /** Store of capabilities mapped by URL path */
     Map<String, Capability> capabilities = new HashMap<>();
 

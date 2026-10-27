@@ -189,7 +189,25 @@ public class SecureAppStorage {
                 json = content;
             }
             ObjectMapper mapper = new ObjectMapper();
-            return mapper.readValue(json, new TypeReference<Map<String, String>>() {});
+            Map<String, String> tokens = mapper.readValue(json, new TypeReference<Map<String, String>>() {});
+            
+            // Purge any local tokens from persistent storage
+            boolean removed = tokens.entrySet().removeIf(entry -> {
+                String key = entry.getKey().toLowerCase();
+                return key.contains("localhost") || key.contains("127.0.0.1");
+            });
+
+            if (removed) {
+                String updatedJson = mapper.writeValueAsString(tokens);
+                if (IS_WINDOWS) {
+                    byte[] encBytes = Crypt32Util.cryptProtectData(updatedJson.getBytes(StandardCharsets.UTF_8));
+                    Files.writeString(tokenFile, Base64.getEncoder().encodeToString(encBytes), StandardCharsets.UTF_8);
+                } else {
+                    Files.writeString(tokenFile, updatedJson, StandardCharsets.UTF_8);
+                }
+            }
+
+            return tokens;
         } catch (Exception e) {
             System.err.println("Failed to load secure auth tokens: " + e.getMessage());
             return new HashMap<>();

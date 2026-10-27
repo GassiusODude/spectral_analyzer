@@ -67,6 +67,9 @@ public class AnalysisDialogController {
     private double userSelectStopTime = 0;
     private Double firstTimeClick = null; // Member variable
 
+    // Default to the conjugate product algorithm for inst freq
+    private boolean useConjugateProductAlgorithm = true;
+
 
     // @FXML private ScatterChart<Number, Number> constellationChart;
     @FXML private StackPane containerMagn;
@@ -128,6 +131,17 @@ public class AnalysisDialogController {
             public void chartMouseMoved(ChartMouseEventFX event) {}
         });
 
+        // Listen for slider value changes
+        alphaFreqSlider.valueProperty().addListener((observable, oldValue, newValue) -> {
+            updateFrequencyChart();
+        });
+        alphaMagnSlider.valueProperty().addListener((observable, oldValue, newValue) -> {
+            updateMagnitudeChart();
+        });
+
+        // Set initial title for frequency chart based on the default algorithm
+        viewFreq.getChart().setTitle("Instantaneous Frequency");
+
         viewFreq.addChartMouseListener(new ChartMouseListenerFX() {
             @Override
             public void chartMouseClicked(ChartMouseEventFX event) {
@@ -179,7 +193,6 @@ public class AnalysisDialogController {
         alphaMagnSlider.valueProperty().addListener((observable, oldValue, newValue) -> {
             updateMagnitudeChart();
         });
-
     }
 
     /**
@@ -250,30 +263,53 @@ public class AnalysisDialogController {
         resetAxes(viewMagn, "Time (s)", "Magnitude (dB)");
     }
 
-    /**
-     * Update the frequency chart
-     */
+
     private void updateFrequencyChart() {
         double[][] data = this.data;
         double sampleRate = this.sampleRate;
-
         seriesFreq.clear();
         double timeStep = 1.0 / sampleRate;
         double alpha = alphaFreqSlider.getValue();
         double vOld = 0.0;
-        for (int i = 1; i < data[0].length; i++) {
-            double phase1 = Math.atan2(data[1][i], data[0][i]);
-            double phase2 = Math.atan2(data[1][i - 1], data[0][i - 1]);
 
-            double dPhase = phase1 - phase2;
-            // Wrap phase to [-PI, PI]
-            if (dPhase > Math.PI) {
-                dPhase -= 2 * Math.PI;
-            } else if (dPhase < -Math.PI) {
-                dPhase += 2 * Math.PI;
+        // Ensure there's enough data to calculate differences
+        if (data == null || data[0].length < 2) {
+            seriesFreq.fireSeriesChanged();
+            resetAxes(viewFreq, "Time (s)", "Frequency (Hz)");
+            return;
+        }
+
+        for (int i = 1; i < data[0].length; i++) {
+            double instFreq;
+
+            if (useConjugateProductAlgorithm) {
+                // Conjugate Product Algorithm
+                double realCurrent = data[0][i];
+                double imagCurrent = data[1][i];
+                double realPrevious = data[0][i - 1];
+                double imagPrevious = data[1][i - 1];
+
+                double prodReal = realCurrent * realPrevious + imagCurrent * imagPrevious;
+                double prodImag = imagCurrent * realPrevious - realCurrent * imagPrevious;
+
+                double dPhase = Math.atan2(prodImag, prodReal);
+                instFreq = (dPhase / (2 * Math.PI)) * sampleRate;
+            } else {
+                // Original Phase Differencing Algorithm
+                double phase1 = Math.atan2(data[1][i], data[0][i]);
+                double phase2 = Math.atan2(data[1][i - 1], data[0][i - 1]);
+
+                double dPhase = phase1 - phase2;
+                // Wrap phase to [-PI, PI]
+                if (dPhase > Math.PI) {
+                    dPhase -= 2 * Math.PI;
+                } else if (dPhase < -Math.PI) {
+                    dPhase += 2 * Math.PI;
+                }
+                instFreq = (dPhase / (2 * Math.PI)) * sampleRate;
             }
 
-            double instFreq = (dPhase / (2 * Math.PI)) * sampleRate;
+            // Apply smoothing filter
             if (i == 1) {
                 vOld = instFreq;
             } else {
@@ -284,7 +320,6 @@ public class AnalysisDialogController {
         ValueAxis yAxis = viewFreq.getChart().getXYPlot().getRangeAxis();
         ((NumberAxis) yAxis).setAutoRangeIncludesZero(false);
         ((NumberAxis) yAxis).setAutoRange(true);
-
         seriesFreq.fireSeriesChanged();
         resetAxes(viewFreq, "Time (s)", "Frequency (Hz)");
     }
@@ -316,11 +351,7 @@ public class AnalysisDialogController {
         ((NumberAxis) yAxis).setAutoRangeIncludesZero(false);
         ((NumberAxis) yAxis).setAutoRange(true);
 
-        // FIXME: (not working)
-        //        Attempt to compare against threshold used in spectrogram)
-        // offset = 10 * Math.log10(sampleRate / freqAndPsd[0].length);
         offset = 0;
-
         for (int ind = 0; ind < freqAndPsd[0].length; ind++) {
             seriesPSD.add(
                 freqAndPsd[0][ind] + this.centerFreq,
@@ -328,8 +359,6 @@ public class AnalysisDialogController {
         }
         seriesPSD.fireSeriesChanged();
         resetAxes(viewPSD, "Frequency (Hz)", "Power/Hz");
-
-
     }
 
     /**
@@ -434,7 +463,7 @@ public class AnalysisDialogController {
         updateMagnitudeChart();
         updateFrequencyChart();
         updatePSDChart();
-
+        viewFreq.requestFocus();
         ADC_LOGGER.info("Analysis Dialog updated for {} samples.", data[0].length);
     }
 
@@ -579,6 +608,7 @@ public class AnalysisDialogController {
             // set up time
             updateTimePlots(x);
         }
+
     }
 
 
@@ -699,8 +729,7 @@ public class AnalysisDialogController {
     @FXML
     private void handleUpdateTimeFromMarkers(ActionEvent event) {
         if (activeAnnotation != null) {
-
-            // FIXME: calculate the start time in samples and duration in samples (with original sample rate)
+            // calculate the start time in samples and duration in samples (with original sample rate)
             activeAnnotation.setSampleStart(Long.valueOf((long)(userSelectStartTime * this.origSampleRate)));
             long nSamples = Long.valueOf((long) ((userSelectStopTime - userSelectStartTime) * this.origSampleRate));
             activeAnnotation.setSampleCount(nSamples);
@@ -736,7 +765,7 @@ public class AnalysisDialogController {
     }
 
     /**
-     * Add measurements tot he comments section
+     * Add measurements to the comments section
      * @param e event of clicking the button
      */
     @FXML
