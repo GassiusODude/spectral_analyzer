@@ -664,9 +664,8 @@ public class MainController {
                 long totalBytes = sigMfHelper.getDataBuffer().capacity();
                 totalSamples = totalBytes / bytesPerSample;
 
-                fileScrollBar.setMin(0);
-                fileScrollBar.setMax(totalSamples - (spectrogramCanvas.getHeight() * fftSize));
-                fileScrollBar.setValue(0);
+                currentSampleOffset = 0;
+                updateFileScrollBar();
 
                 MC_LOGGER.info(
                     "\n\t------- SigMF Loaded -------" +
@@ -680,13 +679,7 @@ public class MainController {
 
 
                 Platform.runLater(() -> {
-                    double canvasW = spectrogramCanvas.getWidth();
-
-                    fileScrollBar.setMin(0);
-                    // Ensure we don't calculate a negative Max
-                    fileScrollBar.setMax(Math.max(0, totalSamples - (long)(canvasW * fftSize)));
-                    fileScrollBar.setValue(0);
-                    fileScrollBar.setBlockIncrement(canvasW);
+                    updateFileScrollBar();
                     updateDisplay();
                 });
 
@@ -1017,6 +1010,30 @@ public class MainController {
     }
 
     /**
+     * Update the file scrollbar (time slider) minimum, maximum, block increment, and value
+     * based on current canvas width, total samples, and FFT size.
+     */
+    private void updateFileScrollBar() {
+        if (spectrogramCanvas == null || fileScrollBar == null) {
+            return;
+        }
+        double canvasW = spectrogramCanvas.getWidth();
+        if (canvasW <= 0) {
+            return;
+        }
+        long maxOffset = Math.max(0, totalSamples - (long) (canvasW * fftSize));
+        fileScrollBar.setMin(0);
+        fileScrollBar.setMax(maxOffset);
+        if (currentSampleOffset > maxOffset) {
+            currentSampleOffset = maxOffset;
+        }
+        if (fileScrollBar.getValue() != currentSampleOffset) {
+            fileScrollBar.setValue(currentSampleOffset);
+        }
+        fileScrollBar.setBlockIncrement(canvasW);
+    }
+
+    /**
      * Core update method to redraw GUI
      */
     public void updateDisplay() {
@@ -1030,6 +1047,8 @@ public class MainController {
         if (canvasW <= 0) {
             return; // Wait for layout
         }
+
+        updateFileScrollBar();
 
         var global = sigMfHelper.getMetadata().global();
         String dataType = global.datatype();
