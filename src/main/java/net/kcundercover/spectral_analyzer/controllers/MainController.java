@@ -374,6 +374,22 @@ public class MainController {
             updateDisplay(); // Redraw the canvas at the new offset
         });
 
+        // Control + Scroll wheel to adjust FFT size (zoom)
+        javafx.event.EventHandler<javafx.scene.input.ScrollEvent> zoomScrollHandler = e -> {
+            if (e.isControlDown()) {
+                e.consume();
+                double delta = e.getDeltaY();
+                if (delta != 0) {
+                    double currentValue = nfftSlider.getValue();
+                    double step = delta > 0 ? -1 : 1;
+                    double newValue = Math.max(nfftSlider.getMin(), Math.min(nfftSlider.getMax(), currentValue + step));
+                    nfftSlider.setValue(newValue);
+                }
+            }
+        };
+        plotContainer.setOnScroll(zoomScrollHandler);
+        annotationOverlay.setOnScroll(zoomScrollHandler);
+
         // ======================================
         //  Selection helper to test annotations
         // ======================================
@@ -922,7 +938,12 @@ public class MainController {
             if (result.isPresent() && result.get() == ButtonType.OK) {
                 // ACCEPT: User selected to accept changes made in the Table View
                 controller.updateMainAnnotations();
+                Long targetSample = controller.getJumpSampleOffset();
+                if (targetSample != null) {
+                    currentSampleOffset = targetSample;
+                }
                 updateAnnotationDisplay();
+                updateDisplay();
 
             } else {
                 // REJECT: Do nothing; the edits stay in the temporary AnnotationRow objects

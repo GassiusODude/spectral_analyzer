@@ -70,6 +70,11 @@ public class AnnotationController {
     private double sampleRate;
     private RestHelper restHelper;
     private SigMfHelper sigmfHelper;
+    private Long jumpSampleOffset = null;
+
+    public Long getJumpSampleOffset() {
+        return jumpSampleOffset;
+    }
 
     @Autowired private AsyncExtractDownConvertService asyncDownConvertService;
 
@@ -162,6 +167,27 @@ public class AnnotationController {
         selectCol.setEditable(true);
         selectCol.setCellValueFactory(cellData -> cellData.getValue().selectedProperty());
         selectCol.setCellFactory(CheckBoxTableCell.forTableColumn(selectCol));
+
+        annotationTable.setRowFactory(tv -> {
+            javafx.scene.control.TableRow<AnnotationRow> row = new javafx.scene.control.TableRow<>();
+            javafx.scene.control.ContextMenu contextMenu = new javafx.scene.control.ContextMenu();
+            javafx.scene.control.MenuItem jumpItem = new javafx.scene.control.MenuItem("Jump to Time Start");
+            jumpItem.setOnAction(event -> {
+                AnnotationRow item = row.getItem();
+                if (item != null) {
+                    jumpSampleOffset = (long) (item.getStartTime() * sampleRate);
+                    AC_LOGGER.info("Jump requested to sample: {}", jumpSampleOffset);
+                }
+            });
+            contextMenu.getItems().add(jumpItem);
+
+            row.contextMenuProperty().bind(
+                javafx.beans.binding.Bindings.when(row.emptyProperty())
+                    .then((javafx.scene.control.ContextMenu) null)
+                    .otherwise(contextMenu)
+            );
+            return row;
+        });
     }
 
     /**
