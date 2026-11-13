@@ -352,7 +352,7 @@ public class MainController {
             AppConfiguration config = configService.getActiveConfig();
             config.setFftPower(exponent);
             configService.saveCurrentConfig(config);
-            MC_LOGGER.warn("Updating NFFT to " + exponent);
+            MC_LOGGER.debug("Updating NFFT to " + exponent);
 
             // Update UI
             lblNfftValue.setText(String.valueOf(fftSize));

@@ -3,12 +3,14 @@ package net.kcundercover.spectral_analyzer.services;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.annotation.PostConstruct;
 import org.springframework.stereotype.Service;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import net.kcundercover.spectral_analyzer.data.SecureAppStorage;
 import net.kcundercover.spectral_analyzer.data.AppConfiguration;
 
 @Service
 public class ConfigurationService {
-
+    private static final Logger CS_LOGGER = LoggerFactory.getLogger(ConfigurationService.class);
     private final ObjectMapper objectMapper = new ObjectMapper();
     private AppConfiguration activeConfig;
 
@@ -69,9 +71,9 @@ public class ConfigurationService {
             // update active to a copy of the provided updated config
             this.activeConfig = objectMapper.readValue(jsonString, AppConfiguration.class);
 
-            System.out.println("SpectralAnalyzer settings successfully saved to disk.");
+            CS_LOGGER.info("SpectralAnalyzer settings successfully saved to disk.");
         } catch (Exception e) {
-            System.err.println("Failed to write config updates: " + e.getMessage());
+            CS_LOGGER.warn("Failed to write config updates: " + e.getMessage());
         }
     }
 }

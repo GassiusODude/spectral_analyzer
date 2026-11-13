@@ -122,7 +122,7 @@ repositories {
     mavenCentral()
 
 	// Jitpack.io
-	maven { url 'https://jitpack.io'}
+	maven { url='https://jitpack.io' }
 }
 
 dependencies {
